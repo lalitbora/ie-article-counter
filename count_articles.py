@@ -5,9 +5,8 @@ The Indian Express - Article Counter & Analyzer
 Counts daily articles section-wise, daily total, and monthly total directly
 from The Indian Express (indianexpress.com) official sitemaps.
 
-Outputs:
-  - Terminal: Formatted summary tables (Monthly, Daily, Section-wise).
-  - Excel (.xlsx): Executive multi-sheet report with pivot matrix & raw data.
+Uses cloudscraper / requests with full browser headers for high reliability
+on both local machines and cloud hosting (Streamlit Cloud / AWS).
 """
 
 import sys
@@ -18,8 +17,6 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
-import urllib.request
-import urllib.error
 
 # Ensure Windows terminal doesn't crash on unicode characters
 try:
@@ -32,6 +29,41 @@ import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# Use cloudscraper if available (bypasses Cloudflare on cloud servers), else requests
+try:
+    import cloudscraper
+    _SESSION = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        }
+    )
+except ImportError:
+    import requests
+    _SESSION = requests.Session()
+
+# Full realistic Chrome browser headers
+HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/124.0.0.0 Safari/537.36'
+    ),
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
+}
 
 # Common friendly section names mapping
 SECTION_TITLE_MAP = {
@@ -66,7 +98,6 @@ SECTION_TITLE_MAP = {
     'news-today': 'News Today'
 }
 
-# Slugs that belong to Cities
 CITY_SLUGS = {
     'delhi', 'mumbai', 'chandigarh', 'pune', 'bangalore', 'bengaluru',
     'kolkata', 'lucknow', 'ahmedabad', 'hyderabad', 'chennai', 'jaipur',
@@ -75,18 +106,7 @@ CITY_SLUGS = {
     'gurgaon', 'noida', 'ghaziabad', 'faridabad'
 }
 
-# Slugs that belong to World
 WORLD_SLUGS = {'pakistan', 'world'}
-
-HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/124.0.0.0 Safari/537.36'
-    ),
-    'Accept': 'application/xml,text/xml,*/*',
-    'Accept-Language': 'en-US,en;q=0.9',
-}
 
 
 def parse_flexible_date(date_str: str) -> datetime.date:
@@ -166,7 +186,6 @@ def parse_article_url(url: str):
             sub_section = 'General'
             slug = ''
 
-    # Normalize cities
     if section_key in CITY_SLUGS:
         sub_section = section_key.capitalize()
         section_key = 'cities'
@@ -185,7 +204,7 @@ def parse_article_url(url: str):
 
 
 def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
-    """Fetch and parse daily Indian Express sitemap for a given date."""
+    """Fetch and parse daily Indian Express sitemap for a given date using session."""
     yyyy = target_date.year
     mm = f"{target_date.month:02d}"
     dd = f"{target_date.day:02d}"
@@ -196,10 +215,19 @@ def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
 
     for attempt in range(1, max_retries + 1):
         try:
-            req = urllib.request.Request(sitemap_url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=20) as response:
-                content = response.read()
+            resp = _SESSION.get(sitemap_url, headers=HEADERS, timeout=20)
+            
+            if resp.status_code == 404:
+                error_msg = f"No sitemap found (404) for {target_date}"
+                break
+            elif resp.status_code == 403:
+                error_msg = f"HTTP 403 Forbidden (Cloudflare block on cloud IP)"
+                break
+            elif resp.status_code != 200:
+                error_msg = f"HTTP {resp.status_code}"
+                continue
 
+            content = resp.content
             root = ET.fromstring(content)
             urls = root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}url')
 
@@ -234,11 +262,6 @@ def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
             error_msg = None
             break
 
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                error_msg = f"No sitemap found (404) for {target_date}"
-                break
-            error_msg = f"HTTP Error {e.code}: {e.reason}"
         except Exception as e:
             error_msg = str(e)
 
@@ -402,7 +425,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
     )
 
 
-def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datetime.date, filepath: str):
+def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datetime.date, filepath):
     """Generate an executive, professional multi-tab Excel workbook."""
     if df.empty:
         print("No data to export.")
@@ -411,7 +434,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    # Styling Palette
     navy_header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     total_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
@@ -431,9 +453,7 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
     total_days = (end_date - start_date).days + 1
     daily_avg = total_articles / total_days if total_days > 0 else 0
 
-    # -------------------------------------------------------------
     # SHEET 1: Monthly Summary
-    # -------------------------------------------------------------
     ws_month = wb.create_sheet(title="Monthly Summary")
     ws_month.views.sheetView[0].showGridLines = True
 
@@ -472,7 +492,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                 c.number_format = "#,##0.0"
         row_idx += 1
 
-    # Total row
     ws_month.cell(row=row_idx, column=1, value="Grand Total").alignment = Alignment(horizontal="left")
     ws_month.cell(row=row_idx, column=2, value=df['date'].nunique()).alignment = Alignment(horizontal="right")
     ws_month.cell(row=row_idx, column=3, value=total_articles).alignment = Alignment(horizontal="right")
@@ -487,9 +506,7 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
         elif col_idx == 4:
             c.number_format = "#,##0.0"
 
-    # -------------------------------------------------------------
     # SHEET 2: Daily Count
-    # -------------------------------------------------------------
     ws_daily = wb.create_sheet(title="Daily Total Count")
     ws_daily.views.sheetView[0].showGridLines = True
 
@@ -520,7 +537,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                 c.number_format = "#,##0"
         row_idx += 1
 
-    # Daily Total
     ws_daily.cell(row=row_idx, column=1, value="Grand Total").alignment = Alignment(horizontal="left")
     ws_daily.cell(row=row_idx, column=2, value=f"{total_days} Days").alignment = Alignment(horizontal="left")
     ws_daily.cell(row=row_idx, column=3, value=total_articles).alignment = Alignment(horizontal="right")
@@ -532,9 +548,7 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
         if col_idx == 3:
             c.number_format = "#,##0"
 
-    # -------------------------------------------------------------
     # SHEET 3: Section Summary
-    # -------------------------------------------------------------
     ws_sec = wb.create_sheet(title="Section Summary")
     ws_sec.views.sheetView[0].showGridLines = True
 
@@ -570,7 +584,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                 c.number_format = "0.0%"
         row_idx += 1
 
-    # Section Total
     ws_sec.cell(row=row_idx, column=1, value="").alignment = Alignment(horizontal="center")
     ws_sec.cell(row=row_idx, column=2, value="Grand Total").alignment = Alignment(horizontal="left")
     ws_sec.cell(row=row_idx, column=3, value=total_articles).alignment = Alignment(horizontal="right")
@@ -585,9 +598,7 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
         elif col_idx == 4:
             c.number_format = "0.0%"
 
-    # -------------------------------------------------------------
-    # SHEET 4: Daily Section Matrix (Pivot Table)
-    # -------------------------------------------------------------
+    # SHEET 4: Daily Section Matrix
     ws_matrix = wb.create_sheet(title="Daily Section Matrix")
     ws_matrix.views.sheetView[0].showGridLines = True
 
@@ -636,9 +647,7 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                     c.font = Font(name="Calibri", size=11, bold=True)
         row_idx += 1
 
-    # -------------------------------------------------------------
     # SHEET 5: Raw Article Data
-    # -------------------------------------------------------------
     ws_data = wb.create_sheet(title="All Articles Data")
     ws_data.views.sheetView[0].showGridLines = True
 
@@ -665,7 +674,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
         for c_idx in range(1, 7):
             ws_data.cell(row=r_idx, column=c_idx).font = regular_font
 
-    # Auto-adjust column widths
     for ws in wb.worksheets:
         for col in ws.columns:
             max_len = 0
@@ -698,11 +706,8 @@ def run_pipeline(start_date_str: str, end_date_str: str, output_path: str = None
         return
 
     df = pd.DataFrame(all_articles)
-
-    # 1. Terminal display
     display_terminal_summary(df, start_date, end_date)
 
-    # 2. Excel export
     if not output_path:
         filename = f"IE_Article_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
         output_path = os.path.join(os.getcwd(), filename)
@@ -738,7 +743,6 @@ def main():
 
     args = parser.parse_args()
 
-    # If arguments not provided via CLI, prompt interactively
     if not args.start or not args.end:
         print("=" * 65)
         print("     THE INDIAN EXPRESS - ARTICLE COUNTER & ANALYZER     ")

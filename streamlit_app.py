@@ -31,89 +31,105 @@ st.markdown("""
         font-size: 1rem;
         margin-bottom: 1.5rem;
     }
-    .kpi-card {
-        background-color: #F8F9FA;
-        border-radius: 8px;
-        padding: 16px;
-        border-left: 4px solid #1F4E78;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">📰 The Indian Express — Article Counter</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">Daily Section-Wise, Daily Total & Monthly Summary Analyzer (Live Sitemaps)</div>', unsafe_allow_html=True)
 
-# Parse URL parameters if present
-query_params = st.query_params
-default_start = None
-default_end = None
+today = datetime.now().date()
 
+# Initialize session state for dates
+if "start_val" not in st.session_state:
+    st.session_state["start_val"] = today - timedelta(days=6)
+if "end_val" not in st.session_state:
+    st.session_state["end_val"] = today
+
+# Handle URL query parameters if present
+query_params = st.query_params
 if "start" in query_params:
     try:
-        default_start = parse_flexible_date(query_params["start"])
+        st.session_state["start_val"] = parse_flexible_date(query_params["start"])
     except Exception:
         pass
-
 if "end" in query_params:
     try:
-        default_end = parse_flexible_date(query_params["end"])
+        st.session_state["end_val"] = parse_flexible_date(query_params["end"])
     except Exception:
         pass
 
-today = datetime.now().date()
-if not default_start:
-    default_start = today - timedelta(days=6)
-if not default_end:
-    default_end = today
+# Quick shortcuts handlers
+def set_quick_dates(start_offset, end_offset):
+    st.session_state["start_val"] = today - timedelta(days=start_offset)
+    st.session_state["end_val"] = today - timedelta(days=end_offset)
 
-# Filter Section
+def set_month_dates():
+    st.session_state["start_val"] = today.replace(day=1)
+    st.session_state["end_val"] = today
+
+# Quick select buttons
+st.caption("Quick Select:")
+q1, q2, q3, q4, q5 = st.columns(5)
+with q1:
+    if st.button("Today", use_container_width=True):
+        set_quick_dates(0, 0)
+        st.rerun()
+with q2:
+    if st.button("Yesterday", use_container_width=True):
+        set_quick_dates(1, 1)
+        st.rerun()
+with q3:
+    if st.button("Last 7 Days", use_container_width=True):
+        set_quick_dates(6, 0)
+        st.rerun()
+with q4:
+    if st.button("Last 14 Days", use_container_width=True):
+        set_quick_dates(13, 0)
+        st.rerun()
+with q5:
+    if st.button("This Month", use_container_width=True):
+        set_month_dates()
+        st.rerun()
+
+# Date Pickers & Fetch Button
 with st.container():
     col1, col2, col3 = st.columns([2, 2, 2])
     with col1:
-        start_date = st.date_input("Start Date", value=default_start)
+        start_date = st.date_input("Start Date", value=st.session_state["start_val"], key="input_start")
     with col2:
-        end_date = st.date_input("End Date", value=default_end)
+        end_date = st.date_input("End Date", value=st.session_state["end_val"], key="input_end")
     with col3:
         st.write("")
         st.write("")
         fetch_btn = st.button("📊 Fetch & Calculate", type="primary", use_container_width=True)
 
-# Quick shortcuts
-st.caption("Quick Select:")
-quick_cols = st.columns(5)
-if quick_cols[0].button("Today", use_container_width=True):
-    start_date = today
-    end_date = today
-    fetch_btn = True
-if quick_cols[1].button("Yesterday", use_container_width=True):
-    start_date = today - timedelta(days=1)
-    end_date = today - timedelta(days=1)
-    fetch_btn = True
-if quick_cols[2].button("Last 7 Days", use_container_width=True):
-    start_date = today - timedelta(days=6)
-    end_date = today
-    fetch_btn = True
-if quick_cols[3].button("Last 14 Days", use_container_width=True):
-    start_date = today - timedelta(days=13)
-    end_date = today
-    fetch_btn = True
-if quick_cols[4].button("This Month", use_container_width=True):
-    start_date = today.replace(day=1)
-    end_date = today
-    fetch_btn = True
-
-# Main Execution
+# Main Execution Trigger
 if fetch_btn or ("start" in query_params and "end" in query_params):
     if start_date > end_date:
         start_date, end_date = end_date, start_date
 
     total_days = (end_date - start_date).days + 1
 
-    with st.spinner(f"Fetching articles from Indian Express for {total_days} day(s)..."):
+    with st.spinner(f"Fetching articles from Indian Express sitemaps for {total_days} day(s)..."):
         all_articles, date_status = fetch_all_dates(start_date, end_date, max_workers=6)
 
     if not all_articles:
-        st.warning(f"No articles found for the period {start_date} to {end_date}.")
+        st.error(f"Koi articles nahi mile ya fetch fail ho gaya ({start_date} to {end_date}).")
+        
+        # Show Detailed Error breakdown
+        with st.expander("🔍 Click to view Connection / Date-wise Status", expanded=True):
+            st.write("Har date ka network request status:")
+            for d, status in date_status.items():
+                if "Error" in str(status) or "Exception" in str(status):
+                    st.error(f"**{d}**: {status}")
+                else:
+                    st.info(f"**{d}**: {status}")
+            
+            st.warning("""
+            **Troubleshooting Note:**
+            - Agar yahan `HTTP 403 Forbidden` dikh raha hai, to iska matlab Indian Express ka Cloudflare Firewall cloud server ke IP ko block kar raha hai.
+            - Local PC par `start_web_app.bat` chalane se ye 100% smoothly kaam karta hai kyunki local internet IP block nahi hoti.
+            """)
     else:
         df = pd.DataFrame(all_articles)
         total_articles = len(df)
@@ -145,7 +161,7 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
 
         st.divider()
 
-        # Tabs for details
+        # Detail Tabs
         tab_sec, tab_daily, tab_monthly, tab_matrix, tab_raw = st.tabs([
             "📊 Section-Wise Count",
             "📅 Daily Total Count",
@@ -154,7 +170,6 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
             "📄 All Articles Data"
         ])
 
-        # TAB 1: Section-Wise
         with tab_sec:
             col_t1, col_t2 = st.columns([1, 1])
             sec_counts = df['section'].value_counts().reset_index()
@@ -162,36 +177,26 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
             sec_counts['Share (%)'] = (sec_counts['Article Count'] / total_articles * 100).round(1)
 
             with col_t1:
-                st.dataframe(
-                    sec_counts,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(sec_counts, use_container_width=True, hide_index=True)
             with col_t2:
                 st.bar_chart(
                     data=sec_counts.head(10).set_index('Section')['Article Count'],
                     color="#1F4E78"
                 )
 
-        # TAB 2: Daily Count
         with tab_daily:
             daily_groups = df.groupby(['date', 'day_of_week']).size().reset_index(name='Total Articles')
             daily_groups = daily_groups.sort_values('date')
             
             c_d1, c_d2 = st.columns([1, 1])
             with c_d1:
-                st.dataframe(
-                    daily_groups,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(daily_groups, use_container_width=True, hide_index=True)
             with c_d2:
                 st.line_chart(
                     data=daily_groups.set_index('date')['Total Articles'],
                     color="#2F855A"
                 )
 
-        # TAB 3: Monthly Summary
         with tab_monthly:
             monthly_rows = []
             for (m_code, m_name), m_df in df.groupby(['month', 'month_name']):
@@ -203,21 +208,12 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
                     "Total Articles": m_count,
                     "Daily Average": round(m_count / m_days, 1) if m_days > 0 else 0
                 })
-            st.dataframe(
-                pd.DataFrame(monthly_rows),
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(pd.DataFrame(monthly_rows), use_container_width=True, hide_index=True)
 
-        # TAB 4: Daily Section Matrix
         with tab_matrix:
             pivot = pd.crosstab(index=df['date'], columns=df['section'], margins=True, margins_name="Grand Total")
-            st.dataframe(
-                pivot,
-                use_container_width=True
-            )
+            st.dataframe(pivot, use_container_width=True)
 
-        # TAB 5: Raw Data
         with tab_raw:
             st.dataframe(
                 df[['date', 'day_of_week', 'time', 'section', 'sub_section', 'title', 'url']],
