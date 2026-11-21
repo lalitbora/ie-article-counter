@@ -1,0 +1,103 @@
+@echo off
+title The Indian Express - Story Count Software
+color 0B
+cls
+
+:menu
+cls
+echo ==============================================================================
+echo             THE INDIAN EXPRESS - STORY COUNT ^& ARTICLE ANALYZER
+echo ==============================================================================
+echo.
+echo   [1] Run Interactive Software in Terminal (Black Screen Mode)
+echo   [2] Launch Web Dashboard Software in Browser (http://localhost:5000)
+echo   [3] Quick Analysis: Last 7 Days Story Count
+echo   [4] Quick Analysis: Current Month to Date
+echo   [5] Push Latest Updates to GitHub (Sync Streamlit Cloud)
+echo   [6] Exit Software
+echo.
+echo ==============================================================================
+set /p opt="Enter your choice [1-6]: "
+
+if "%opt%"=="1" goto terminal_mode
+if "%opt%"=="2" goto web_mode
+if "%opt%"=="3" goto last7days
+if "%opt%"=="4" goto thismonth
+if "%opt%"=="5" goto push_git
+if "%opt%"=="6" goto exit_app
+
+echo Invalid selection. Please enter 1, 2, 3, 4, 5, or 6.
+pause
+goto menu
+
+:terminal_mode
+cls
+echo ==============================================================================
+echo              TERMINAL MODE - STORY COUNT ^& ARTICLE ANALYZER
+echo ==============================================================================
+echo.
+cd /d "%~dp0"
+python count_articles.py
+echo.
+echo Press any key to return to main menu...
+pause >nul
+goto menu
+
+:web_mode
+cls
+echo ==============================================================================
+echo             STARTING LOCAL WEB DASHBOARD SOFTWARE (PORT 5000)
+echo ==============================================================================
+echo.
+echo  Starting local web server on http://localhost:5000 ...
+echo  Your browser will open automatically.
+echo  Press Ctrl+C in this window anytime to return to the menu.
+echo.
+cd /d "%~dp0"
+python web_app.py
+pause
+goto menu
+
+:last7days
+cls
+echo ==============================================================================
+echo                    QUICK ANALYSIS: LAST 7 DAYS
+echo ==============================================================================
+echo.
+cd /d "%~dp0"
+python -c "from datetime import datetime, timedelta; import count_articles; today = datetime.now().date(); count_articles.run_pipeline(str(today - timedelta(days=6)), str(today))"
+echo.
+echo Press any key to return to main menu...
+pause >nul
+goto menu
+
+:thismonth
+cls
+echo ==============================================================================
+echo                 QUICK ANALYSIS: CURRENT MONTH TO DATE
+echo ==============================================================================
+echo.
+cd /d "%~dp0"
+python -c "from datetime import datetime; import count_articles; today = datetime.now().date(); count_articles.run_pipeline(str(today.replace(day=1)), str(today))"
+echo.
+echo Press any key to return to main menu...
+pause >nul
+goto menu
+
+:push_git
+cls
+echo ==============================================================================
+echo                    SYNC WITH GITHUB ^& STREAMLIT CLOUD
+echo ==============================================================================
+echo.
+cd /d "%~dp0"
+git add .
+git commit -m "Update story counter software with weekly counts and metadata"
+git push origin main
+echo.
+echo Code synced with GitHub! Streamlit Cloud will update automatically.
+pause
+goto menu
+
+:exit_app
+exit

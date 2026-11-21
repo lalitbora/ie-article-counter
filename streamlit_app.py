@@ -1,3 +1,18 @@
+#!/usr/bin/env python3
+"""
+The Indian Express — Story Count Streamlit Cloud Web Application
+=================================================================
+Interactive Streamlit application featuring:
+  - Checkbox selectors for Daily, Weekly, Monthly, Section-wise, and Full Metadata
+  - Start Date and End Date range pickers with quick shortcuts
+  - Real-time tabular metrics, charts, and pivot matrices
+  - One-click Excel (.xlsx) report generation and download
+  - Full compatibility with Streamlit Community Cloud and local environments
+
+Author: Antigravity Assistant
+Environment: Python 3.8+
+"""
+
 import sys
 import io
 from datetime import datetime, timedelta
@@ -12,7 +27,7 @@ from count_articles import (
 )
 
 st.set_page_config(
-    page_title="Indian Express Article Counter",
+    page_title="Indian Express Story Counter",
     page_icon="📰",
     layout="wide"
 )
@@ -34,12 +49,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">📰 The Indian Express — Article Counter</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Daily Section-Wise, Daily Total & Monthly Summary Analyzer (Live Sitemaps)</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">📰 The Indian Express — Story Counter Software</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">Daily, Weekly, Monthly & Section-wise Story Count Analyzer (Live Sitemaps)</div>', unsafe_allow_html=True)
 
 today = datetime.now().date()
 
-# Initialize session state for dates
+# Initialize session state for date range
 if "start_val" not in st.session_state:
     st.session_state["start_val"] = today - timedelta(days=6)
 if "end_val" not in st.session_state:
@@ -67,8 +82,24 @@ def set_month_dates():
     st.session_state["start_val"] = today.replace(day=1)
     st.session_state["end_val"] = today
 
-# Quick select buttons
-st.caption("Quick Select:")
+# Top Checkbox Selectors Panel
+st.markdown("##### ⚙️ Select Story Count Modules to Include:")
+chk_col1, chk_col2, chk_col3, chk_col4, chk_col5 = st.columns(5)
+with chk_col1:
+    inc_daily = st.checkbox("Daily Count (Date-wise)", value=True)
+with chk_col2:
+    inc_weekly = st.checkbox("Weekly Story Count", value=True)
+with chk_col3:
+    inc_monthly = st.checkbox("Monthly Story Count", value=True)
+with chk_col4:
+    inc_sections = st.checkbox("Section Breakdown", value=True)
+with chk_col5:
+    inc_details = st.checkbox("All Article Metadata", value=True)
+
+st.divider()
+
+# Quick select shortcuts
+st.caption("Quick Range Select:")
 q1, q2, q3, q4, q5 = st.columns(5)
 with q1:
     if st.button("Today", use_container_width=True):
@@ -110,26 +141,18 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
 
     total_days = (end_date - start_date).days + 1
 
-    with st.spinner(f"Fetching articles from Indian Express sitemaps for {total_days} day(s)..."):
+    with st.spinner(f"Fetching stories from Indian Express sitemaps for {total_days} day(s)..."):
         all_articles, date_status = fetch_all_dates(start_date, end_date, max_workers=6)
 
     if not all_articles:
-        st.error(f"Koi articles nahi mile ya fetch fail ho gaya ({start_date} to {end_date}).")
-        
-        # Show Detailed Error breakdown
+        st.error(f"No articles could be fetched for the period {start_date} to {end_date}.")
         with st.expander("🔍 Click to view Connection / Date-wise Status", expanded=True):
-            st.write("Har date ka network request status:")
+            st.write("Date-wise Network Request Status:")
             for d, status in date_status.items():
                 if "Error" in str(status) or "Exception" in str(status):
                     st.error(f"**{d}**: {status}")
                 else:
                     st.info(f"**{d}**: {status}")
-            
-            st.warning("""
-            **Troubleshooting Note:**
-            - Agar yahan `HTTP 403 Forbidden` dikh raha hai, to iska matlab Indian Express ka Cloudflare Firewall cloud server ke IP ko block kar raha hai.
-            - Local PC par `start_web_app.bat` chalane se ye 100% smoothly kaam karta hai kyunki local internet IP block nahi hoti.
-            """)
     else:
         df = pd.DataFrame(all_articles)
         total_articles = len(df)
@@ -140,19 +163,26 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
         # KPI Metrics
         st.divider()
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Articles", f"{total_articles:,}")
+        m1.metric("Total Stories", f"{total_articles:,}")
         m2.metric("Daily Average", f"{daily_avg:.1f} / day")
         m3.metric("Days Analyzed", f"{total_days} Days")
-        m4.metric("Top Section", f"{top_section}", f"{top_section_count:,} articles")
+        m4.metric("Top Section", f"{top_section}", f"{top_section_count:,} stories")
 
         # Excel Download Button
         buf = io.BytesIO()
-        export_to_excel(df, start_date, end_date, buf)
+        export_to_excel(
+            df, start_date, end_date, buf,
+            include_daily=inc_daily,
+            include_weekly=inc_weekly,
+            include_monthly=inc_monthly,
+            include_sections=inc_sections,
+            include_details=inc_details
+        )
         excel_data = buf.getvalue()
-        filename = f"IE_Article_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
+        filename = f"IE_Story_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
 
         st.download_button(
-            label="📥 Download Complete Excel Report (.xlsx)",
+            label="📥 Download Excel Report (.xlsx)",
             data=excel_data,
             file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -161,62 +191,97 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
 
         st.divider()
 
-        # Detail Tabs
-        tab_sec, tab_daily, tab_monthly, tab_matrix, tab_raw = st.tabs([
-            "📊 Section-Wise Count",
-            "📅 Daily Total Count",
-            "🗓️ Monthly Summary",
-            "🔲 Daily Section Matrix",
-            "📄 All Articles Data"
-        ])
+        # Build Dynamic Tabs
+        tab_names = []
+        if inc_daily: tab_names.append("📅 Daily Story Count")
+        if inc_weekly: tab_names.append("🗓️ Weekly Story Count")
+        if inc_monthly: tab_names.append("📆 Monthly Summary")
+        if inc_sections: tab_names.append("📊 Section-Wise Breakdown")
+        if inc_sections: tab_names.append("🔲 Daily Section Matrix")
+        if inc_details: tab_names.append("📄 All Articles Metadata")
 
-        with tab_sec:
-            col_t1, col_t2 = st.columns([1, 1])
-            sec_counts = df['section'].value_counts().reset_index()
-            sec_counts.columns = ['Section', 'Article Count']
-            sec_counts['Share (%)'] = (sec_counts['Article Count'] / total_articles * 100).round(1)
+        if tab_names:
+            tabs = st.tabs(tab_names)
+            tab_idx = 0
 
-            with col_t1:
-                st.dataframe(sec_counts, use_container_width=True, hide_index=True)
-            with col_t2:
-                st.bar_chart(
-                    data=sec_counts.head(10).set_index('Section')['Article Count'],
-                    color="#1F4E78"
-                )
+            # Daily Count Tab
+            if inc_daily:
+                with tabs[tab_idx]:
+                    daily_groups = df.groupby(['date', 'day_of_week']).size().reset_index(name='Total Stories')
+                    daily_groups = daily_groups.sort_values('date')
+                    c_d1, c_d2 = st.columns([1, 1])
+                    with c_d1:
+                        st.dataframe(daily_groups, use_container_width=True, hide_index=True)
+                    with c_d2:
+                        st.line_chart(daily_groups.set_index('date')['Total Stories'], color="#2F855A")
+                tab_idx += 1
 
-        with tab_daily:
-            daily_groups = df.groupby(['date', 'day_of_week']).size().reset_index(name='Total Articles')
-            daily_groups = daily_groups.sort_values('date')
-            
-            c_d1, c_d2 = st.columns([1, 1])
-            with c_d1:
-                st.dataframe(daily_groups, use_container_width=True, hide_index=True)
-            with c_d2:
-                st.line_chart(
-                    data=daily_groups.set_index('date')['Total Articles'],
-                    color="#2F855A"
-                )
+            # Weekly Count Tab
+            if inc_weekly:
+                with tabs[tab_idx]:
+                    weekly_rows = []
+                    for (w_key, w_label), w_df in df.groupby(['week_key', 'week_label']):
+                        w_count = len(w_df)
+                        w_days = w_df['date'].nunique()
+                        top_sec = w_df['section'].value_counts().index[0] if not w_df.empty else "-"
+                        weekly_rows.append({
+                            "Calendar Week": w_label,
+                            "Days Active": w_days,
+                            "Total Stories": w_count,
+                            "Daily Average": round(w_count / w_days, 1) if w_days > 0 else 0,
+                            "Top Section": top_sec
+                        })
+                    w_df_display = pd.DataFrame(weekly_rows)
+                    c_w1, c_w2 = st.columns([1, 1])
+                    with c_w1:
+                        st.dataframe(w_df_display, use_container_width=True, hide_index=True)
+                    with c_w2:
+                        if not w_df_display.empty:
+                            st.bar_chart(w_df_display.set_index('Calendar Week')['Total Stories'], color="#1F4E78")
+                tab_idx += 1
 
-        with tab_monthly:
-            monthly_rows = []
-            for (m_code, m_name), m_df in df.groupby(['month', 'month_name']):
-                m_count = len(m_df)
-                m_days = m_df['date'].nunique()
-                monthly_rows.append({
-                    "Month": m_name,
-                    "Days Active": m_days,
-                    "Total Articles": m_count,
-                    "Daily Average": round(m_count / m_days, 1) if m_days > 0 else 0
-                })
-            st.dataframe(pd.DataFrame(monthly_rows), use_container_width=True, hide_index=True)
+            # Monthly Summary Tab
+            if inc_monthly:
+                with tabs[tab_idx]:
+                    monthly_rows = []
+                    for (m_code, m_name), m_df in df.groupby(['month', 'month_name']):
+                        m_count = len(m_df)
+                        m_days = m_df['date'].nunique()
+                        monthly_rows.append({
+                            "Month": m_name,
+                            "Days Active": m_days,
+                            "Total Stories": m_count,
+                            "Daily Average": round(m_count / m_days, 1) if m_days > 0 else 0
+                        })
+                    st.dataframe(pd.DataFrame(monthly_rows), use_container_width=True, hide_index=True)
+                tab_idx += 1
 
-        with tab_matrix:
-            pivot = pd.crosstab(index=df['date'], columns=df['section'], margins=True, margins_name="Grand Total")
-            st.dataframe(pivot, use_container_width=True)
+            # Section-Wise Breakdown Tab
+            if inc_sections:
+                with tabs[tab_idx]:
+                    sec_counts = df['section'].value_counts().reset_index()
+                    sec_counts.columns = ['Section Name', 'Story Count']
+                    sec_counts['Share (%)'] = (sec_counts['Story Count'] / total_articles * 100).round(1)
 
-        with tab_raw:
-            st.dataframe(
-                df[['date', 'day_of_week', 'time', 'section', 'sub_section', 'title', 'url']],
-                use_container_width=True,
-                hide_index=True
-            )
+                    c_s1, c_s2 = st.columns([1, 1])
+                    with c_s1:
+                        st.dataframe(sec_counts, use_container_width=True, hide_index=True)
+                    with c_s2:
+                        st.bar_chart(sec_counts.head(10).set_index('Section Name')['Story Count'], color="#1F4E78")
+                tab_idx += 1
+
+                # Daily Section Matrix Tab
+                with tabs[tab_idx]:
+                    pivot = pd.crosstab(index=df['date'], columns=df['section'], margins=True, margins_name="Grand Total")
+                    st.dataframe(pivot, use_container_width=True)
+                tab_idx += 1
+
+            # All Articles Metadata Tab
+            if inc_details:
+                with tabs[tab_idx]:
+                    st.dataframe(
+                        df[['publish_date', 'day_of_week', 'first_publish_time', 'last_modified_time', 'section', 'sub_section', 'headline', 'url']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                tab_idx += 1
