@@ -36,19 +36,25 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# Use cloudscraper when available to handle anti-bot challenges on cloud servers; fallback to requests
+# Use curl_cffi with Chrome TLS impersonation to bypass Cloudflare on cloud servers (AWS/Streamlit Cloud)
 try:
-    import cloudscraper
-    _SESSION = cloudscraper.create_scraper(
-        browser={
-            'browser': 'chrome',
-            'platform': 'windows',
-            'desktop': True
-        }
-    )
+    from curl_cffi import requests as cffi_requests
+    _USE_CURL_CFFI = True
+    _SESSION = None
 except ImportError:
-    import requests
-    _SESSION = requests.Session()
+    _USE_CURL_CFFI = False
+    try:
+        import cloudscraper
+        _SESSION = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
+        )
+    except ImportError:
+        import requests
+        _SESSION = requests.Session()
 
 # Realistic Chrome headers for HTTP requests
 HEADERS = {
@@ -248,7 +254,10 @@ def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
 
     for attempt in range(1, max_retries + 1):
         try:
-            resp = _SESSION.get(sitemap_url, headers=HEADERS, timeout=20)
+            if _USE_CURL_CFFI:
+                resp = cffi_requests.get(sitemap_url, headers=HEADERS, impersonate="chrome124", timeout=20)
+            else:
+                resp = _SESSION.get(sitemap_url, headers=HEADERS, timeout=20)
             
             if resp.status_code == 404:
                 error_msg = f"No sitemap found (404) for {target_date}"
