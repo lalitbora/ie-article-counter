@@ -939,12 +939,35 @@ def main():
             except ValueError as e:
                 print(f"  {e}")
 
-        print("\nSelect Output Modules (Press Enter to accept default [Y]):")
-        inc_daily = input("  Include Daily Story Count? [Y/n]: ").strip().lower() != 'n'
-        inc_weekly = input("  Include Weekly Story Count? [Y/n]: ").strip().lower() != 'n'
-        inc_monthly = input("  Include Monthly Story Count? [Y/n]: ").strip().lower() != 'n'
-        inc_sections = input("  Include Section-Wise Breakdown? [Y/n]: ").strip().lower() != 'n'
-        inc_details = input("  Include Full Article Metadata (URLs, Headlines)? [Y/n]: ").strip().lower() != 'n'
+        print("\n--------------------------------------------------------------------")
+        print(" SELECT STORY COUNT MODULES (Select 2 or more, e.g. 1,2 or 1,2,3):")
+        print("--------------------------------------------------------------------")
+        print("  [1] Daily Story Count (Date-wise)")
+        print("  [2] Weekly Story Count (Week-wise)")
+        print("  [3] Monthly Story Count (Month-wise)")
+        print("  [4] Section-Wise Breakdown (Desk counts & Daily Matrix)")
+        print("  [5] Full Article Metadata (URLs, Headlines, Publish & Modified Times)")
+        print("  [A] Select ALL Modules (Default - Press Enter)")
+        print("--------------------------------------------------------------------")
+        selection = input("Enter your choices (e.g. 1,2 or 1,2,4 or press Enter for ALL): ").strip()
+
+        if not selection or selection.lower() == 'a':
+            inc_daily = True
+            inc_weekly = True
+            inc_monthly = True
+            inc_sections = True
+            inc_details = True
+        else:
+            chosen = [item.strip() for item in re.split(r'[, ]+', selection) if item.strip()]
+            inc_daily = '1' in chosen
+            inc_weekly = '2' in chosen
+            inc_monthly = '3' in chosen
+            inc_sections = '4' in chosen
+            inc_details = '5' in chosen
+
+            if not any([inc_daily, inc_weekly, inc_monthly, inc_sections, inc_details]):
+                print("No numbers recognized. Defaulting to ALL modules.")
+                inc_daily = inc_weekly = inc_monthly = inc_sections = inc_details = True
 
         run_pipeline(
             start_input, end_input,

@@ -446,6 +446,10 @@ HTML_PAGE = """<!DOCTYPE html>
         <div class="checkbox-panel">
           <div class="checkbox-title">
             <span>⚙️ Select Story Count Modules to Include:</span>
+            <div style="margin-left: auto; display: flex; gap: 8px;">
+              <button type="button" class="shortcut-btn" onclick="toggleAllBoxes(true)">✓ Select All</button>
+              <button type="button" class="shortcut-btn" onclick="toggleAllBoxes(false)">✗ Clear All</button>
+            </div>
           </div>
           <div class="checkbox-grid">
             <label class="checkbox-item">
@@ -661,6 +665,14 @@ HTML_PAGE = """<!DOCTYPE html>
   </div>
 
   <script>
+    function toggleAllBoxes(state) {
+      document.getElementById('chkDaily').checked = state;
+      document.getElementById('chkWeekly').checked = state;
+      document.getElementById('chkMonthly').checked = state;
+      document.getElementById('chkSections').checked = state;
+      document.getElementById('chkDetails').checked = state;
+    }
+
     function formatDate(d) {
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, '0');
