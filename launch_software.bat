@@ -11,22 +11,24 @@ echo ===========================================================================
 echo.
 echo   [1] Run Interactive Software in Terminal (Black Screen Mode)
 echo   [2] Launch Web Dashboard Software in Browser (http://localhost:5000)
-echo   [3] Quick Analysis: Last 7 Days Story Count
-echo   [4] Quick Analysis: Current Month to Date
-echo   [5] Push Latest Updates to GitHub (Sync Streamlit Cloud)
-echo   [6] Exit Software
+echo   [3] Generate Public Live URL to Share with Team (100%% Cloudflare Immune)
+echo   [4] Quick Analysis: Last 7 Days Story Count
+echo   [5] Quick Analysis: Current Month to Date
+echo   [6] Push Latest Updates to GitHub (Sync Streamlit Cloud)
+echo   [7] Exit Software
 echo.
 echo ==============================================================================
-set /p opt="Enter your choice [1-6]: "
+set /p opt="Enter your choice [1-7]: "
 
 if "%opt%"=="1" goto terminal_mode
 if "%opt%"=="2" goto web_mode
-if "%opt%"=="3" goto last7days
-if "%opt%"=="4" goto thismonth
-if "%opt%"=="5" goto push_git
-if "%opt%"=="6" goto exit_app
+if "%opt%"=="3" goto public_url
+if "%opt%"=="4" goto last7days
+if "%opt%"=="5" goto thismonth
+if "%opt%"=="6" goto push_git
+if "%opt%"=="7" goto exit_app
 
-echo Invalid selection. Please enter 1, 2, 3, 4, 5, or 6.
+echo Invalid selection. Please enter a number between 1 and 7.
 pause
 goto menu
 
@@ -56,6 +58,15 @@ echo.
 cd /d "%~dp0"
 python web_app.py
 pause
+goto menu
+
+:public_url
+cls
+echo ==============================================================================
+echo             GENERATING SHAREABLE PUBLIC HTTPS LIVE URL
+echo ==============================================================================
+echo.
+call "%~dp0start_public_live_url.bat"
 goto menu
 
 :last7days
@@ -92,7 +103,7 @@ echo ===========================================================================
 echo.
 cd /d "%~dp0"
 git add .
-git commit -m "Update story counter software with weekly counts and metadata"
+git commit -m "Update story counter software and public URL launcher"
 git push origin main
 echo.
 echo Code synced with GitHub! Streamlit Cloud will update automatically.
