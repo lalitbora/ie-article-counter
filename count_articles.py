@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
 """
-The Indian Express - Article & Story Count Analyzer
-====================================================
-Comprehensive sitemap analyzer that fetches published articles and generates:
+Indian Express Group — Multi-Property Story Count & Article Analyzer
+=====================================================================
+Comprehensive sitemap analyzer supporting all Indian Express Group publications:
+  1. The Indian Express (https://indianexpress.com/)
+  2. Financial Express (https://www.financialexpress.com/)
+  3. Loksatta (https://www.loksatta.com/)
+  4. Jansatta (https://www.jansatta.com/)
+  5. IE Tamil (https://tamil.indianexpress.com/)
+  6. IE Bengali (https://bengali.indianexpress.com/)
+  7. IE Gujarati (https://gujarati.indianexpress.com/)
+  8. IE Malayalam (https://malayalam.indianexpress.com/)
+
+Calculates:
   - Daily Story Count (Date-wise)
-  - Weekly Story Count (Week-wise with start/end dates)
-  - Monthly Story Count (Month-wise with daily averages)
-  - Section-wise Story Count (Overall, Daily, Weekly, and Monthly matrices)
+  - Weekly Story Count (ISO calendar week-wise)
+  - Monthly Story Count (Month-wise)
+  - Section-wise Story Count (Desk breakdowns and daily matrix)
   - Full Article Metadata (URLs, Headlines, Publish Date/Time, Last Modified Time)
-  - Multi-sheet Styled Excel Workbook (.xlsx)
+  - Styled Multi-Sheet Excel Reports (.xlsx)
 
 Author: Antigravity Assistant
 Environment: Python 3.8+
@@ -24,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 
-# Ensure standard output uses UTF-8 to prevent charmap encoding errors on Windows
+# Ensure UTF-8 output encoding to avoid Windows charmap encoding errors
 try:
     if sys.stdout.encoding != 'utf-8':
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -77,7 +87,59 @@ HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
-# Mapping of section URL slugs to canonical display titles
+# Configuration for all Indian Express Group publications
+PROPERTIES = {
+    'indianexpress': {
+        'name': 'The Indian Express',
+        'url': 'https://indianexpress.com/',
+        'sitemap_type': 'query',  # /sitemap.xml?yyyy=YYYY&mm=MM&dd=DD
+        'sitemap_base': 'https://indianexpress.com/sitemap.xml',
+    },
+    'financialexpress': {
+        'name': 'Financial Express',
+        'url': 'https://www.financialexpress.com/',
+        'sitemap_type': 'query',  # /sitemap.xml?yyyy=YYYY&mm=MM&dd=DD
+        'sitemap_base': 'https://www.financialexpress.com/sitemap.xml',
+    },
+    'loksatta': {
+        'name': 'Loksatta',
+        'url': 'https://www.loksatta.com/',
+        'sitemap_type': 'query',  # /sitemap.xml?yyyy=YYYY&mm=MM&dd=DD
+        'sitemap_base': 'https://www.loksatta.com/sitemap.xml',
+    },
+    'jansatta': {
+        'name': 'Jansatta',
+        'url': 'https://www.jansatta.com/',
+        'sitemap_type': 'query',  # /sitemap.xml?yyyy=YYYY&mm=MM&dd=DD
+        'sitemap_base': 'https://www.jansatta.com/sitemap.xml',
+    },
+    'ietamil': {
+        'name': 'IE Tamil',
+        'url': 'https://tamil.indianexpress.com/',
+        'sitemap_type': 'date_xml',  # /sitemap_YYYY-MM-DD.xml
+        'sitemap_base': 'https://tamil.indianexpress.com/sitemap_',
+    },
+    'iebengali': {
+        'name': 'IE Bengali',
+        'url': 'https://bengali.indianexpress.com/',
+        'sitemap_type': 'date_xml',  # /sitemap_YYYY-MM-DD.xml
+        'sitemap_base': 'https://bengali.indianexpress.com/sitemap_',
+    },
+    'iegujarati': {
+        'name': 'IE Gujarati',
+        'url': 'https://gujarati.indianexpress.com/',
+        'sitemap_type': 'date_xml',  # /sitemap_YYYY-MM-DD.xml
+        'sitemap_base': 'https://gujarati.indianexpress.com/sitemap_',
+    },
+    'iemalayalam': {
+        'name': 'IE Malayalam',
+        'url': 'https://malayalam.indianexpress.com/',
+        'sitemap_type': 'date_xml',  # /sitemap_YYYY-MM-DD.xml
+        'sitemap_base': 'https://malayalam.indianexpress.com/sitemap_',
+    }
+}
+
+# Mapping of section URL slugs to canonical display titles for English properties
 SECTION_TITLE_MAP = {
     'cities': 'Cities',
     'entertainment': 'Entertainment',
@@ -107,10 +169,16 @@ SECTION_TITLE_MAP = {
     'long-reads': 'Long Reads',
     'express-sunday-eye': 'Express Sunday Eye',
     'fresh-take': 'Fresh Take',
-    'news-today': 'News Today'
+    'news-today': 'News Today',
+    'india-news': 'India News',
+    'market': 'Market',
+    'industry': 'Industry',
+    'banking-finance': 'Banking & Finance',
+    'auto': 'Auto',
+    'money': 'Personal Finance / Money',
+    'horoscope': 'Horoscope'
 }
 
-# Slugs that map directly under the 'Cities' desk
 CITY_SLUGS = {
     'delhi', 'mumbai', 'chandigarh', 'pune', 'bangalore', 'bengaluru',
     'kolkata', 'lucknow', 'ahmedabad', 'hyderabad', 'chennai', 'jaipur',
@@ -119,15 +187,11 @@ CITY_SLUGS = {
     'gurgaon', 'noida', 'ghaziabad', 'faridabad'
 }
 
-# Slugs that map directly under the 'World' desk
 WORLD_SLUGS = {'pakistan', 'world'}
 
 
 def parse_flexible_date(date_str: str) -> datetime.date:
-    """
-    Parse a user-entered date string in multiple common formats.
-    Supported: YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY, YYYY/MM/DD, DD.MM.YYYY, etc.
-    """
+    """Parse flexible user-entered date strings into a datetime.date object."""
     date_str = str(date_str).strip()
     formats = [
         '%Y-%m-%d',
@@ -146,89 +210,77 @@ def parse_flexible_date(date_str: str) -> datetime.date:
         except ValueError:
             pass
     raise ValueError(
-        f"Invalid date format: '{date_str}'. Please use YYYY-MM-DD or DD-MM-YYYY (e.g. 2026-11-01 or 01-11-2026)."
+        f"Invalid date format: '{date_str}'. Please use YYYY-MM-DD or DD-MM-YYYY (e.g. 2024-12-02 or 02-12-2024)."
     )
 
 
 def extract_title_from_slug(slug: str) -> str:
-    """
-    Generate a clean, readable headline from an article's URL slug.
-    Removes trailing article IDs (e.g., -10963395) and converts dashes to title case.
-    """
+    """Generate a readable headline from an article's URL slug."""
     if not slug:
         return ""
     clean_slug = re.sub(r'-\d+$', '', slug)
+    clean_slug = re.sub(r'/\d+$', '', clean_slug)
     words = clean_slug.replace('-', ' ').split()
     return ' '.join(word.capitalize() for word in words)
 
 
-def parse_article_url(url: str):
+def parse_article_url(url: str, property_key: str = 'indianexpress'):
     """
-    Parse section, sub-section, and headline/title from an Indian Express URL.
+    Parse section, sub-section, and headline from any Express property article URL.
     Returns: (section_clean, sub_section_clean, headline)
     """
     parsed = urlparse(url)
     parts = [p for p in parsed.path.strip('/').split('/') if p]
 
     if not parts:
-        return 'Other', 'General', ''
+        return 'General', '-', ''
 
-    section_key = 'other'
-    sub_section = '-'
-    slug = ''
-
+    # Handle /article/ prefix in standard Indian Express URLs
     if parts[0] == 'article':
-        if len(parts) >= 4:
-            section_key = parts[1].lower()
-            sub_section = parts[2]
-            slug = parts[3]
-        elif len(parts) == 3:
-            section_key = parts[1].lower()
-            sub_section = 'General'
-            slug = parts[2]
-        elif len(parts) == 2:
-            section_key = parts[1].lower()
-            sub_section = 'General'
-            slug = ''
-        else:
-            section_key = 'article'
-            sub_section = 'General'
-            slug = ''
-    else:
-        section_key = parts[0].lower()
-        if len(parts) > 2:
-            sub_section = parts[1]
-            slug = parts[-1]
-        elif len(parts) == 2:
-            sub_section = 'General'
-            slug = parts[1]
-        else:
-            sub_section = 'General'
-            slug = ''
+        parts = parts[1:]
 
-    # Normalize individual city paths to Cities desk
-    if section_key in CITY_SLUGS:
-        sub_section = section_key.capitalize()
-        section_key = 'cities'
-    elif section_key in WORLD_SLUGS and section_key != 'world':
-        sub_section = section_key.capitalize()
-        section_key = 'world'
+    if not parts:
+        return 'General', '-', ''
+
+    # Check if last segment is a pure numeric article ID (e.g. /3682494/ or /7684395)
+    if parts[-1].isdigit():
+        slug = parts[-2] if len(parts) >= 2 else parts[-1]
+        sec_parts = parts[:-2]
+    else:
+        slug = parts[-1]
+        sec_parts = parts[:-1]
+
+    if len(sec_parts) >= 2:
+        sec = sec_parts[0].lower()
+        sub = sec_parts[1].lower()
+    elif len(sec_parts) == 1:
+        sec = sec_parts[0].lower()
+        sub = '-'
+    else:
+        sec = 'general'
+        sub = '-'
+
+    # Specific normalization for The Indian Express cities and world
+    if property_key == 'indianexpress':
+        if sec in CITY_SLUGS:
+            sub = sec.capitalize()
+            sec = 'cities'
+        elif sec in WORLD_SLUGS and sec != 'world':
+            sub = sec.capitalize()
+            sec = 'world'
 
     section_name = SECTION_TITLE_MAP.get(
-        section_key,
-        section_key.replace('-', ' ').title()
+        sec,
+        sec.replace('-', ' ').title()
     )
-    sub_section_name = sub_section.replace('-', ' ').title() if sub_section != '-' else '-'
+    sub_section_name = sub.replace('-', ' ').title() if sub != '-' else '-'
     headline = extract_title_from_slug(slug)
 
     return section_name, sub_section_name, headline
 
 
 def compute_week_info(date_obj: datetime.date):
-    """
-    Calculate calendar week start (Monday), week end (Sunday), and a descriptive label.
-    Example: 'Week 46 (10-Nov to 16-Nov 2026)'
-    """
+    """Calculate ISO calendar week details and format a human-readable label."""
     iso_year, iso_week, _ = date_obj.isocalendar()
     monday = date_obj - timedelta(days=date_obj.weekday())
     sunday = monday + timedelta(days=6)
@@ -237,16 +289,28 @@ def compute_week_info(date_obj: datetime.date):
     return week_key, week_label, monday, sunday
 
 
-def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
-    """
-    Fetch and parse the daily XML sitemap for a specific date from Indian Express.
-    Returns: (target_date, list_of_articles, error_msg)
-    """
+def get_sitemap_url(property_key: str, target_date: datetime.date) -> str:
+    """Generate the exact daily sitemap URL for the selected publication property."""
+    prop = PROPERTIES.get(property_key, PROPERTIES['indianexpress'])
+    stype = prop.get('sitemap_type', 'query')
     yyyy = target_date.year
     mm = f"{target_date.month:02d}"
     dd = f"{target_date.day:02d}"
-    sitemap_url = f"https://indianexpress.com/sitemap.xml?yyyy={yyyy}&mm={mm}&dd={dd}"
 
+    if stype == 'query':
+        return f"{prop['sitemap_base']}?yyyy={yyyy}&mm={mm}&dd={dd}"
+    elif stype == 'date_xml':
+        return f"{prop['sitemap_base']}{yyyy}-{mm}-{dd}.xml"
+    else:
+        return f"{prop['sitemap_base']}?yyyy={yyyy}&mm={mm}&dd={dd}"
+
+
+def fetch_sitemap_for_date(target_date: datetime.date, property_key: str = 'indianexpress', max_retries: int = 3):
+    """
+    Fetch and parse the daily XML sitemap for a specific date and property.
+    Returns: (target_date, list_of_articles, error_msg)
+    """
+    sitemap_url = get_sitemap_url(property_key, target_date)
     articles = []
     error_msg = None
 
@@ -258,7 +322,7 @@ def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
                 resp = cffi_requests.get(sitemap_url, headers=HEADERS, impersonate="chrome124", timeout=20)
             else:
                 resp = _SESSION.get(sitemap_url, headers=HEADERS, timeout=20)
-            
+
             if resp.status_code == 404:
                 error_msg = f"No sitemap found (404) for {target_date}"
                 break
@@ -280,14 +344,13 @@ def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
                 if loc_elem is not None and loc_elem.text:
                     url_str = loc_elem.text.strip()
                     lastmod_str = lastmod_elem.text.strip() if lastmod_elem is not None and lastmod_elem.text else ''
-                    
-                    # Extract time portions from ISO lastmod timestamp
+
                     pub_time = ''
                     if 'T' in lastmod_str:
                         time_part = lastmod_str.split('T')[1]
                         pub_time = time_part[:8]
 
-                    sec, sub_sec, headline = parse_article_url(url_str)
+                    sec, sub_sec, headline = parse_article_url(url_str, property_key=property_key)
 
                     articles.append({
                         'date': target_date.strftime('%Y-%m-%d'),
@@ -319,25 +382,28 @@ def fetch_sitemap_for_date(target_date: datetime.date, max_retries: int = 3):
     return target_date, articles, error_msg
 
 
-def fetch_all_dates(start_date: datetime.date, end_date: datetime.date, max_workers: int = 6):
-    """
-    Fetch articles for all dates in the range concurrently using a ThreadPoolExecutor.
-    """
+def fetch_all_dates(start_date: datetime.date, end_date: datetime.date,
+                    property_key: str = 'indianexpress', max_workers: int = 6):
+    """Fetch stories for all dates in range concurrently for the selected property."""
+    prop_info = PROPERTIES.get(property_key, PROPERTIES['indianexpress'])
     total_days = (end_date - start_date).days + 1
     dates = [start_date + timedelta(days=i) for i in range(total_days)]
 
-    print(f"\n" + "=" * 68)
-    print(f"  FETCHING STORIES FROM THE INDIAN EXPRESS SITEMAPS")
+    print(f"\n" + "=" * 70)
+    print(f"  FETCHING STORIES: {prop_info['name'].upper()}")
+    print(f"  Property: {prop_info['url']}")
     print(f"  Period  : {start_date.strftime('%d-%b-%Y')} to {end_date.strftime('%d-%b-%Y')} ({total_days} days)")
     print(f"  Threads : {max_workers} concurrent network workers")
-    print("=" * 68)
+    print("=" * 70)
 
     all_articles = []
     date_status = {}
     completed_count = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_date = {executor.submit(fetch_sitemap_for_date, d): d for d in dates}
+        future_to_date = {
+            executor.submit(fetch_sitemap_for_date, d, property_key): d for d in dates
+        }
 
         for future in as_completed(future_to_date):
             d = future_to_date[future]
@@ -402,27 +468,26 @@ def print_ascii_table(title: str, headers: list, rows: list, alignments: list = 
 
 
 def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_date: datetime.date,
+                             property_name: str = "The Indian Express",
                              include_daily: bool = True, include_weekly: bool = True,
                              include_monthly: bool = True, include_sections: bool = True):
-    """
-    Display comprehensive terminal tables based on selected checkboxes.
-    """
+    """Display comprehensive terminal tables based on selected checkboxes and property."""
     if df.empty:
-        print("\nNo articles found for the specified date range.")
+        print(f"\nNo articles found for {property_name} in the specified date range.")
         return
 
     total_articles = len(df)
     total_days = (end_date - start_date).days + 1
     daily_avg = total_articles / total_days if total_days > 0 else 0
 
-    print("\n" + "=" * 68)
-    print("        THE INDIAN EXPRESS — STORY COUNT ANALYSIS REPORT")
-    print("=" * 68)
+    print("\n" + "=" * 70)
+    print(f"       {property_name.upper()} — STORY COUNT ANALYSIS REPORT")
+    print("=" * 70)
     print(f"  Period        : {start_date.strftime('%d-%b-%Y')} to {end_date.strftime('%d-%b-%Y')}")
     print(f"  Total Days    : {total_days}")
     print(f"  Total Stories : {total_articles:,}")
     print(f"  Daily Average : {daily_avg:.1f} stories/day")
-    print("=" * 68)
+    print("=" * 70)
 
     # 1. Monthly Summary Table
     if include_monthly:
@@ -433,7 +498,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
             m_days = m_df['date'].nunique()
             m_avg = m_count / m_days if m_days > 0 else 0
             monthly_rows.append([m_name, m_days, f"{m_count:,}", f"{m_avg:.1f}"])
-        
+
         monthly_rows.append([
             "TOTAL",
             df['date'].nunique(),
@@ -441,7 +506,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
             f"{daily_avg:.1f}"
         ])
         print_ascii_table(
-            "1. Monthly Story Count Summary",
+            f"1. {property_name} — Monthly Story Count Summary",
             ["Month", "Days Active", "Total Stories", "Daily Average"],
             monthly_rows,
             alignments=['left', 'right', 'right', 'right']
@@ -457,7 +522,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
             w_avg = w_count / w_days if w_days > 0 else 0
             top_sec = w_df['section'].value_counts().index[0] if not w_df.empty else "-"
             weekly_rows.append([w_label, w_days, f"{w_count:,}", f"{w_avg:.1f}", top_sec])
-        
+
         weekly_rows.append([
             "GRAND TOTAL",
             df['date'].nunique(),
@@ -466,7 +531,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
             "-"
         ])
         print_ascii_table(
-            "2. Weekly Story Count Summary",
+            f"2. {property_name} — Weekly Story Count Summary",
             ["Calendar Week", "Days in Range", "Total Stories", "Daily Average", "Top Section"],
             weekly_rows,
             alignments=['left', 'right', 'right', 'right', 'left']
@@ -484,7 +549,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
             ])
         daily_rows.append(["GRAND TOTAL", f"{total_days} Days", f"{total_articles:,}"])
         print_ascii_table(
-            "3. Daily Total Story Count",
+            f"3. {property_name} — Daily Total Story Count",
             ["Date", "Day of Week", "Total Stories"],
             daily_rows,
             alignments=['left', 'left', 'right']
@@ -499,7 +564,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
             section_rows.append([sec, f"{count:,}", f"{pct:.1f}%"])
         section_rows.append(["TOTAL", f"{total_articles:,}", "100.0%"])
         print_ascii_table(
-            "4. Section-Wise Story Count (Overall)",
+            f"4. {property_name} — Section-Wise Story Count (Overall)",
             ["Section Name", "Story Count", "Share (%)"],
             section_rows,
             alignments=['left', 'right', 'right']
@@ -507,6 +572,7 @@ def display_terminal_summary(df: pd.DataFrame, start_date: datetime.date, end_da
 
 
 def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datetime.date, filepath,
+                    property_name: str = "The Indian Express",
                     include_daily: bool = True, include_weekly: bool = True,
                     include_monthly: bool = True, include_sections: bool = True,
                     include_details: bool = True):
@@ -519,9 +585,8 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
         return
 
     wb = openpyxl.Workbook()
-    wb.remove(wb.active)  # Remove default blank sheet
+    wb.remove(wb.active)
 
-    # Corporate Color Palette & Styling
     navy_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     total_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
@@ -529,10 +594,10 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
     regular_font = Font(name="Calibri", size=11)
     title_font = Font(name="Calibri", size=14, bold=True, color="1F4E78")
     subtitle_font = Font(name="Calibri", size=10, italic=True, color="595959")
-    
+
     thin_side = Side(border_style="thin", color="D9D9D9")
     thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
-    
+
     total_top = Side(border_style="thin", color="000000")
     total_bottom = Side(border_style="double", color="000000")
     total_border = Border(top=total_top, bottom=total_bottom, left=thin_side, right=thin_side)
@@ -541,14 +606,12 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
     total_days = (end_date - start_date).days + 1
     daily_avg = total_articles / total_days if total_days > 0 else 0
 
-    # -------------------------------------------------------------
     # SHEET 1: Monthly Summary
-    # -------------------------------------------------------------
     if include_monthly:
         ws_m = wb.create_sheet(title="Monthly Summary")
         ws_m.views.sheetView[0].showGridLines = True
 
-        ws_m["A1"] = "The Indian Express — Monthly Story Count Summary"
+        ws_m["A1"] = f"{property_name} — Monthly Story Count Summary"
         ws_m["A1"].font = title_font
         ws_m["A2"] = f"Period: {start_date.strftime('%d-%b-%Y')} to {end_date.strftime('%d-%b-%Y')} | Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}"
         ws_m["A2"].font = subtitle_font
@@ -583,7 +646,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                     cell.number_format = "#,##0.0"
             row_idx += 1
 
-        # Grand Total Row
         ws_m.cell(row=row_idx, column=1, value="Grand Total").alignment = Alignment(horizontal="left")
         ws_m.cell(row=row_idx, column=2, value=df['date'].nunique()).alignment = Alignment(horizontal="right")
         ws_m.cell(row=row_idx, column=3, value=total_articles).alignment = Alignment(horizontal="right")
@@ -598,14 +660,12 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             elif col_idx == 4:
                 cell.number_format = "#,##0.0"
 
-    # -------------------------------------------------------------
     # SHEET 2: Weekly Summary
-    # -------------------------------------------------------------
     if include_weekly:
         ws_w = wb.create_sheet(title="Weekly Summary")
         ws_w.views.sheetView[0].showGridLines = True
 
-        ws_w["A1"] = "The Indian Express — Weekly Story Count Summary"
+        ws_w["A1"] = f"{property_name} — Weekly Story Count Summary"
         ws_w["A1"].font = title_font
         ws_w["A2"] = f"Period: {start_date.strftime('%d-%b-%Y')} to {end_date.strftime('%d-%b-%Y')} (ISO Calendar Weeks)"
         ws_w["A2"].font = subtitle_font
@@ -642,7 +702,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                     cell.number_format = "#,##0.0"
             row_idx += 1
 
-        # Grand Total Row
         ws_w.cell(row=row_idx, column=1, value="Grand Total").alignment = Alignment(horizontal="left")
         ws_w.cell(row=row_idx, column=2, value=df['date'].nunique()).alignment = Alignment(horizontal="right")
         ws_w.cell(row=row_idx, column=3, value=total_articles).alignment = Alignment(horizontal="right")
@@ -658,14 +717,12 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             elif col_idx == 4:
                 cell.number_format = "#,##0.0"
 
-    # -------------------------------------------------------------
     # SHEET 3: Daily Total Count
-    # -------------------------------------------------------------
     if include_daily:
         ws_d = wb.create_sheet(title="Daily Total Count")
         ws_d.views.sheetView[0].showGridLines = True
 
-        ws_d["A1"] = "The Indian Express — Daily Total Story Count"
+        ws_d["A1"] = f"{property_name} — Daily Total Story Count"
         ws_d["A1"].font = title_font
         ws_d["A2"] = f"Period: {start_date} to {end_date}"
         ws_d["A2"].font = subtitle_font
@@ -692,7 +749,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                     cell.number_format = "#,##0"
             row_idx += 1
 
-        # Daily Grand Total
         ws_d.cell(row=row_idx, column=1, value="Grand Total").alignment = Alignment(horizontal="left")
         ws_d.cell(row=row_idx, column=2, value=f"{total_days} Days").alignment = Alignment(horizontal="left")
         ws_d.cell(row=row_idx, column=3, value=total_articles).alignment = Alignment(horizontal="right")
@@ -704,14 +760,12 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             if col_idx == 3:
                 cell.number_format = "#,##0"
 
-    # -------------------------------------------------------------
-    # SHEET 4: Section Summary & Matrices
-    # -------------------------------------------------------------
+    # SHEET 4: Section Summary
     if include_sections:
         ws_s = wb.create_sheet(title="Section Summary")
         ws_s.views.sheetView[0].showGridLines = True
 
-        ws_s["A1"] = "The Indian Express — Section-Wise Story Count"
+        ws_s["A1"] = f"{property_name} — Section-Wise Story Count"
         ws_s["A1"].font = title_font
         ws_s["A2"] = f"Total Stories: {total_articles:,} across {total_days} day(s)"
         ws_s["A2"].font = subtitle_font
@@ -743,7 +797,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                     cell.number_format = "0.0%"
             row_idx += 1
 
-        # Section Grand Total
         ws_s.cell(row=row_idx, column=1, value="").alignment = Alignment(horizontal="center")
         ws_s.cell(row=row_idx, column=2, value="Grand Total").alignment = Alignment(horizontal="left")
         ws_s.cell(row=row_idx, column=3, value=total_articles).alignment = Alignment(horizontal="right")
@@ -758,11 +811,11 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             elif col_idx == 4:
                 cell.number_format = "0.0%"
 
-        # SHEET 5: Daily Section Matrix (Pivot Table)
+        # Daily Section Matrix
         ws_matrix = wb.create_sheet(title="Daily Section Matrix")
         ws_matrix.views.sheetView[0].showGridLines = True
 
-        ws_matrix["A1"] = "The Indian Express — Daily Section-Wise Matrix"
+        ws_matrix["A1"] = f"{property_name} — Daily Section-Wise Matrix"
         ws_matrix["A1"].font = title_font
         ws_matrix["A2"] = "Breakdown of published stories per section by date"
         ws_matrix["A2"].font = subtitle_font
@@ -800,9 +853,7 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
                         cell.font = Font(name="Calibri", size=11, bold=True)
             row_idx += 1
 
-    # -------------------------------------------------------------
-    # SHEET 6: Full Article Metadata (URLs, Headlines, Publish Times)
-    # -------------------------------------------------------------
+    # SHEET 6: All Articles Metadata
     if include_details:
         ws_data = wb.create_sheet(title="All Articles Metadata")
         ws_data.views.sheetView[0].showGridLines = True
@@ -838,7 +889,7 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             ws_data.cell(row=r_idx, column=8, value=art['section']).alignment = Alignment(horizontal="left")
             ws_data.cell(row=r_idx, column=9, value=art['sub_section']).alignment = Alignment(horizontal="left")
             ws_data.cell(row=r_idx, column=10, value=art['headline']).alignment = Alignment(horizontal="left")
-            
+
             url_cell = ws_data.cell(row=r_idx, column=11, value=art['url'])
             url_cell.alignment = Alignment(horizontal="left")
             url_cell.font = Font(name="Calibri", size=10, color="0563C1", underline="single")
@@ -846,7 +897,6 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             for c_idx in range(1, 11):
                 ws_data.cell(row=r_idx, column=c_idx).font = regular_font
 
-    # Automatically set proportional column widths on all generated sheets
     for ws in wb.worksheets:
         for col in ws.columns:
             max_len = 0
@@ -863,13 +913,13 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
         print(f"\nExcel Report successfully saved to:\n  -> {filepath}")
 
 
-def run_pipeline(start_date_str: str, end_date_str: str, output_path: str = None, max_workers: int = 6,
+def run_pipeline(start_date_str: str, end_date_str: str,
+                 property_key: str = 'indianexpress',
+                 output_path: str = None, max_workers: int = 6,
                  include_daily: bool = True, include_weekly: bool = True,
                  include_monthly: bool = True, include_sections: bool = True,
                  include_details: bool = True):
-    """
-    Core end-to-end processing pipeline from date strings to terminal summaries and Excel reports.
-    """
+    """End-to-end execution flow for the chosen property and date range."""
     start_date = parse_flexible_date(start_date_str)
     end_date = parse_flexible_date(end_date_str)
 
@@ -877,30 +927,32 @@ def run_pipeline(start_date_str: str, end_date_str: str, output_path: str = None
         print(f"\n[Notice] Start Date ({start_date}) was after End Date ({end_date}). Swapping automatically.")
         start_date, end_date = end_date, start_date
 
-    all_articles, date_status = fetch_all_dates(start_date, end_date, max_workers=max_workers)
+    prop_info = PROPERTIES.get(property_key, PROPERTIES['indianexpress'])
+    all_articles, date_status = fetch_all_dates(start_date, end_date, property_key=property_key, max_workers=max_workers)
 
     if not all_articles:
-        print("\nNo articles could be fetched for this date range.")
+        print(f"\nNo articles could be fetched for {prop_info['name']} in this date range.")
         return
 
     df = pd.DataFrame(all_articles)
 
-    # 1. Print terminal summaries
     display_terminal_summary(
         df, start_date, end_date,
+        property_name=prop_info['name'],
         include_daily=include_daily,
         include_weekly=include_weekly,
         include_monthly=include_monthly,
         include_sections=include_sections
     )
 
-    # 2. Export Excel workbook
     if not output_path:
-        filename = f"IE_Story_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
+        clean_name = prop_info['name'].replace(' ', '_')
+        filename = f"{clean_name}_Story_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
         output_path = os.path.join(os.getcwd(), filename)
 
     export_to_excel(
         df, start_date, end_date, output_path,
+        property_name=prop_info['name'],
         include_daily=include_daily,
         include_weekly=include_weekly,
         include_monthly=include_monthly,
@@ -911,10 +963,13 @@ def run_pipeline(start_date_str: str, end_date_str: str, output_path: str = None
 
 def main():
     parser = argparse.ArgumentParser(
-        description="The Indian Express — Daily, Weekly, Monthly & Section-wise Story Count Software"
+        description="Indian Express Group — Multi-Property Story Count & Article Analyzer"
     )
-    parser.add_argument("--start", "-s", type=str, help="Start Date (e.g. 2026-11-01 or 01-11-2026)")
-    parser.add_argument("--end", "-e", type=str, help="End Date (e.g. 2026-11-30 or 30-11-2026)")
+    parser.add_argument("--property", "-p", type=str, default="indianexpress",
+                        choices=list(PROPERTIES.keys()),
+                        help="Publication property (indianexpress, financialexpress, loksatta, jansatta, ietamil, iebengali, iegujarati, iemalayalam)")
+    parser.add_argument("--start", "-s", type=str, help="Start Date (e.g. 2024-12-01 or 01-12-2024)")
+    parser.add_argument("--end", "-e", type=str, help="End Date (e.g. 2024-12-15 or 15-12-2024)")
     parser.add_argument("--output", "-o", type=str, help="Custom output Excel filename / path (.xlsx)")
     parser.add_argument("--workers", "-w", type=int, default=6, help="Number of concurrent worker threads (default: 6)")
     parser.add_argument("--no-daily", action="store_true", help="Exclude Daily count")
@@ -925,12 +980,22 @@ def main():
 
     args = parser.parse_args()
 
-    # Interactive prompt mode when run without arguments
     if not args.start or not args.end:
-        print("=" * 68)
-        print("   THE INDIAN EXPRESS — STORY COUNT & ARTICLE ANALYZER   ")
-        print("=" * 68)
-        print("Supported date formats: YYYY-MM-DD or DD-MM-YYYY (e.g. 2026-11-01 or 01-11-2026)\n")
+        print("=" * 70)
+        print("    INDIAN EXPRESS GROUP — MULTI-PROPERTY STORY COUNT SOFTWARE")
+        print("=" * 70)
+        print("\nAvailable Properties:")
+        prop_keys = list(PROPERTIES.keys())
+        for idx, k in enumerate(prop_keys, 1):
+            print(f"  [{idx}] {PROPERTIES[k]['name']} ({PROPERTIES[k]['url']})")
+
+        p_choice = input(f"\nSelect Property [1-{len(prop_keys)}, Default: 1 - The Indian Express]: ").strip()
+        selected_prop = 'indianexpress'
+        if p_choice.isdigit() and 1 <= int(p_choice) <= len(prop_keys):
+            selected_prop = prop_keys[int(p_choice) - 1]
+
+        print(f"\nSelected: {PROPERTIES[selected_prop]['name']}")
+        print("Supported date formats: YYYY-MM-DD or DD-MM-YYYY (e.g. 2024-12-01 or 01-12-2024)\n")
 
         while True:
             start_input = input("Enter Start Date: ").strip()
@@ -961,11 +1026,7 @@ def main():
         selection = input("Enter your choices (e.g. 1,2 or 1,2,4 or press Enter for ALL): ").strip()
 
         if not selection or selection.lower() == 'a':
-            inc_daily = True
-            inc_weekly = True
-            inc_monthly = True
-            inc_sections = True
-            inc_details = True
+            inc_daily = inc_weekly = inc_monthly = inc_sections = inc_details = True
         else:
             chosen = [item.strip() for item in re.split(r'[, ]+', selection) if item.strip()]
             inc_daily = '1' in chosen
@@ -980,6 +1041,7 @@ def main():
 
         run_pipeline(
             start_input, end_input,
+            property_key=selected_prop,
             output_path=args.output,
             max_workers=args.workers,
             include_daily=inc_daily,
@@ -991,6 +1053,7 @@ def main():
     else:
         run_pipeline(
             args.start, args.end,
+            property_key=args.property,
             output_path=args.output,
             max_workers=args.workers,
             include_daily=not args.no_daily,

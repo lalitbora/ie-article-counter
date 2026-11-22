@@ -23,11 +23,12 @@ import streamlit as st
 from count_articles import (
     fetch_all_dates,
     parse_flexible_date,
-    export_to_excel
+    export_to_excel,
+    PROPERTIES
 )
 
 st.set_page_config(
-    page_title="Indian Express Story Counter",
+    page_title="Indian Express Group Story Counter",
     page_icon="📰",
     layout="wide"
 )
@@ -49,10 +50,41 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">📰 The Indian Express — Story Counter Software</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Daily, Weekly, Monthly & Section-wise Story Count Analyzer (Live Sitemaps)</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">📰 Indian Express Group — Multi-Property Story Counter</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">Daily, Weekly, Monthly & Section-wise Story Count Software (Live XML Sitemaps)</div>', unsafe_allow_html=True)
 
 today = datetime.now().date()
+
+# Property Selection Mapping
+PROPERTY_CHOICES = {
+    "📰 The Indian Express (indianexpress.com)": "indianexpress",
+    "📈 Financial Express (financialexpress.com)": "financialexpress",
+    "🗞️ Loksatta (loksatta.com)": "loksatta",
+    "🇮🇳 Jansatta (jansatta.com)": "jansatta",
+    "🏛️ IE Tamil (tamil.indianexpress.com)": "ietamil",
+    "✒️ IE Bengali (bengali.indianexpress.com)": "iebengali",
+    "🦁 IE Gujarati (gujarati.indianexpress.com)": "iegujarati",
+    "🌴 IE Malayalam (malayalam.indianexpress.com)": "iemalayalam",
+}
+
+query_params = st.query_params
+
+default_prop_idx = 0
+if "property" in query_params:
+    p_val = query_params["property"].lower()
+    for idx, (lbl, k) in enumerate(PROPERTY_CHOICES.items()):
+        if k == p_val:
+            default_prop_idx = idx
+            break
+
+# Property Dropdown Selector
+selected_prop_label = st.selectbox(
+    "🌐 Select Indian Express Publication / Property:",
+    options=list(PROPERTY_CHOICES.keys()),
+    index=default_prop_idx
+)
+selected_prop_key = PROPERTY_CHOICES[selected_prop_label]
+prop_info = PROPERTIES[selected_prop_key]
 
 # Initialize session state for date range
 if "start_val" not in st.session_state:
@@ -141,11 +173,11 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
 
     total_days = (end_date - start_date).days + 1
 
-    with st.spinner(f"Fetching stories from Indian Express sitemaps for {total_days} day(s)..."):
-        all_articles, date_status = fetch_all_dates(start_date, end_date, max_workers=6)
+    with st.spinner(f"Fetching stories from {prop_info['name']} sitemaps for {total_days} day(s)..."):
+        all_articles, date_status = fetch_all_dates(start_date, end_date, property_key=selected_prop_key, max_workers=6)
 
     if not all_articles:
-        st.error(f"No articles could be fetched for the period {start_date} to {end_date}.")
+        st.error(f"No articles could be fetched for {prop_info['name']} during {start_date} to {end_date}.")
         with st.expander("🔍 Click to view Connection / Date-wise Status", expanded=True):
             st.write("Date-wise Network Request Status:")
             for d, status in date_status.items():
@@ -163,7 +195,7 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
         # KPI Metrics
         st.divider()
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Stories", f"{total_articles:,}")
+        m1.metric(f"Total Stories ({prop_info['name']})", f"{total_articles:,}")
         m2.metric("Daily Average", f"{daily_avg:.1f} / day")
         m3.metric("Days Analyzed", f"{total_days} Days")
         m4.metric("Top Section", f"{top_section}", f"{top_section_count:,} stories")
@@ -172,6 +204,7 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
         buf = io.BytesIO()
         export_to_excel(
             df, start_date, end_date, buf,
+            property_name=prop_info['name'],
             include_daily=inc_daily,
             include_weekly=inc_weekly,
             include_monthly=inc_monthly,
@@ -179,7 +212,8 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
             include_details=inc_details
         )
         excel_data = buf.getvalue()
-        filename = f"IE_Story_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
+        clean_name = prop_info['name'].replace(' ', '_')
+        filename = f"{clean_name}_Story_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
 
         st.download_button(
             label="📥 Download Excel Report (.xlsx)",

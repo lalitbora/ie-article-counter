@@ -26,7 +26,8 @@ import pandas as pd
 from count_articles import (
     fetch_all_dates,
     parse_flexible_date,
-    export_to_excel
+    export_to_excel,
+    PROPERTIES
 )
 
 PORT = 5000
@@ -431,10 +432,10 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="header-inner">
       <div class="header-title">
         <span class="badge-ie">Official Sitemaps</span>
-        <h1>The Indian Express &mdash; Story Count & Article Analyzer</h1>
+        <h1>Indian Express Group &mdash; Story Count & Article Analyzer</h1>
       </div>
       <div class="header-subtitle">
-        Daily, Weekly, Monthly & Section-wise Story Count Software
+        Multi-Property Story Counter (The Indian Express, Financial Express, Loksatta, Jansatta, Tamil, Bengali, Gujarati, Malayalam)
       </div>
     </div>
   </header>
@@ -475,6 +476,23 @@ HTML_PAGE = """<!DOCTYPE html>
           </div>
         </div>
 
+        <!-- Property Selection Dropdown -->
+        <div style="margin-bottom: 20px;">
+          <label for="propertySelect" style="display: block; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--navy); margin-bottom: 8px;">
+            🌐 Select Publication / Property:
+          </label>
+          <select id="propertySelect" name="property" style="width: 100%; padding: 11px 14px; border-radius: 6px; border: 1.5px solid var(--navy); font-size: 1rem; font-weight: 600; color: #1F4E78; background: #F8FAFC; cursor: pointer;">
+            <option value="indianexpress" selected>📰 The Indian Express (indianexpress.com)</option>
+            <option value="financialexpress">📈 Financial Express (financialexpress.com)</option>
+            <option value="loksatta">🗞️ Loksatta (loksatta.com)</option>
+            <option value="jansatta">🇮🇳 Jansatta (jansatta.com)</option>
+            <option value="ietamil">🏛️ IE Tamil (tamil.indianexpress.com)</option>
+            <option value="iebengali">✒️ IE Bengali (bengali.indianexpress.com)</option>
+            <option value="iegujarati">🦁 IE Gujarati (gujarati.indianexpress.com)</option>
+            <option value="iemalayalam">🌴 IE Malayalam (malayalam.indianexpress.com)</option>
+          </select>
+        </div>
+
         <div class="form-grid">
           <div class="form-group">
             <label for="startDate">Start Date</label>
@@ -505,16 +523,16 @@ HTML_PAGE = """<!DOCTYPE html>
       </form>
 
       <div class="url-tip">
-        💡 <strong>Direct URL Link Feature:</strong> You can bookmark or share direct links with pre-set dates and modules:<br>
-        <code>http://localhost:5000/?start=2026-11-01&end=2026-11-30&daily=1&weekly=1&monthly=1</code><br>
-        <code>http://localhost:5000/download?start=2026-11-01&end=2026-11-30</code> &mdash; Direct Excel report download.
+        💡 <strong>Direct URL Link Feature:</strong> Bookmark or share direct links with publication, dates & modules:<br>
+        <code>http://localhost:5000/?property=financialexpress&start=2024-12-01&end=2024-12-02</code><br>
+        <code>http://localhost:5000/download?property=loksatta&start=2024-12-01&end=2024-12-02</code> &mdash; Direct Excel report download.
       </div>
     </div>
 
     <!-- Loading Spinner -->
     <div id="loading" class="card loading-overlay">
       <div class="spinner"></div>
-      <h3 style="font-size: 1.15rem; font-weight: 600;">Fetching Stories from Indian Express Sitemaps...</h3>
+      <h3 style="font-size: 1.15rem; font-weight: 600;">Fetching Stories from Official Sitemaps...</h3>
       <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 6px;">
         Concurrently parsing daily XML feeds and calculating Daily, Weekly, and Monthly counts...
       </p>
@@ -709,6 +727,7 @@ HTML_PAGE = """<!DOCTYPE html>
     async function handleCalculate(e) {
       if (e) e.preventDefault();
 
+      const prop = document.getElementById('propertySelect').value;
       const start = document.getElementById('startDate').value;
       const end = document.getElementById('endDate').value;
 
@@ -725,6 +744,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
       // Update URL query parameters
       const url = new URL(window.location);
+      url.searchParams.set('property', prop);
       url.searchParams.set('start', start);
       url.searchParams.set('end', end);
       url.searchParams.set('daily', incDaily);
@@ -740,7 +760,7 @@ HTML_PAGE = """<!DOCTYPE html>
       document.getElementById('btnDownload').disabled = true;
 
       try {
-        const queryStr = `/api/count?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&daily=${incDaily}&weekly=${incWeekly}&monthly=${incMonthly}&sections=${incSections}&details=${incDetails}`;
+        const queryStr = `/api/count?property=${encodeURIComponent(prop)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&daily=${incDaily}&weekly=${incWeekly}&monthly=${incMonthly}&sections=${incSections}&details=${incDetails}`;
         const resp = await fetch(queryStr);
         const data = await resp.json();
 
@@ -963,6 +983,7 @@ HTML_PAGE = """<!DOCTYPE html>
     }
 
     function handleDownload() {
+      const prop = document.getElementById('propertySelect').value;
       const start = document.getElementById('startDate').value;
       const end = document.getElementById('endDate').value;
       if (!start || !end) return;
@@ -973,14 +994,19 @@ HTML_PAGE = """<!DOCTYPE html>
       const incSections = document.getElementById('chkSections').checked ? '1' : '0';
       const incDetails = document.getElementById('chkDetails').checked ? '1' : '0';
 
-      window.location.href = `/download?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&daily=${incDaily}&weekly=${incWeekly}&monthly=${incMonthly}&sections=${incSections}&details=${incDetails}`;
+      window.location.href = `/download?property=${encodeURIComponent(prop)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&daily=${incDaily}&weekly=${incWeekly}&monthly=${incMonthly}&sections=${incSections}&details=${incDetails}`;
     }
 
     // Auto-fill from query params on page load
     window.addEventListener('DOMContentLoaded', () => {
       const params = new URLSearchParams(window.location.search);
+      const prop = params.get('property');
       const start = params.get('start');
       const end = params.get('end');
+
+      if (prop && document.getElementById('propertySelect')) {
+        document.getElementById('propertySelect').value = prop;
+      }
 
       if (params.has('daily')) document.getElementById('chkDaily').checked = (params.get('daily') === '1');
       if (params.has('weekly')) document.getElementById('chkWeekly').checked = (params.get('weekly') === '1');
@@ -1021,8 +1047,13 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
             self.wfile.write(HTML_PAGE.encode("utf-8"))
             return
 
-        # 2. JSON API: GET /api/count?start=YYYY-MM-DD&end=YYYY-MM-DD
+        # 2. JSON API: GET /api/count?property=...&start=YYYY-MM-DD&end=YYYY-MM-DD
         elif path == "/api/count":
+            prop_key = params.get("property", ["indianexpress"])[0]
+            if prop_key not in PROPERTIES:
+                prop_key = "indianexpress"
+            prop_info = PROPERTIES[prop_key]
+
             start_str = params.get("start", [None])[0]
             end_str = params.get("end", [None])[0]
             inc_daily = params.get("daily", ["1"])[0] == "1"
@@ -1034,7 +1065,7 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
             if not start_str or not end_str:
                 self.send_json_response(400, {
                     "status": "error",
-                    "message": "Both 'start' and 'end' query parameters are required (e.g. /api/count?start=2026-11-01&end=2026-11-30)"
+                    "message": "Both 'start' and 'end' query parameters are required (e.g. /api/count?property=financialexpress&start=2024-12-01&end=2024-12-02)"
                 })
                 return
 
@@ -1044,11 +1075,13 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
                 if start_date > end_date:
                     start_date, end_date = end_date, start_date
 
-                all_articles, _ = fetch_all_dates(start_date, end_date, max_workers=6)
+                all_articles, _ = fetch_all_dates(start_date, end_date, property_key=prop_key, max_workers=6)
 
                 if not all_articles:
                     self.send_json_response(200, {
                         "status": "success",
+                        "property_key": prop_key,
+                        "property_name": prop_info["name"],
                         "start_date": str(start_date),
                         "end_date": str(end_date),
                         "total_days": (end_date - start_date).days + 1,
@@ -1142,6 +1175,8 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
 
                 response_payload = {
                     "status": "success",
+                    "property_key": prop_key,
+                    "property_name": prop_info["name"],
                     "start_date": str(start_date),
                     "end_date": str(end_date),
                     "total_days": total_days,
@@ -1166,8 +1201,13 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
                 })
             return
 
-        # 3. Direct Excel Download: GET /download?start=...&end=...
+        # 3. Direct Excel Download: GET /download?property=...&start=...&end=...
         elif path == "/download":
+            prop_key = params.get("property", ["indianexpress"])[0]
+            if prop_key not in PROPERTIES:
+                prop_key = "indianexpress"
+            prop_info = PROPERTIES[prop_key]
+
             start_str = params.get("start", [None])[0]
             end_str = params.get("end", [None])[0]
             inc_daily = params.get("daily", ["1"])[0] == "1"
@@ -1188,11 +1228,11 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
                 if start_date > end_date:
                     start_date, end_date = end_date, start_date
 
-                all_articles, _ = fetch_all_dates(start_date, end_date, max_workers=6)
+                all_articles, _ = fetch_all_dates(start_date, end_date, property_key=prop_key, max_workers=6)
                 if not all_articles:
                     self.send_response(404)
                     self.end_headers()
-                    self.wfile.write(b"No articles found for this date range.")
+                    self.wfile.write(f"No articles found for {prop_info['name']} in this date range.".encode("utf-8"))
                     return
 
                 df = pd.DataFrame(all_articles)
@@ -1201,6 +1241,7 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
                 buf = io.BytesIO()
                 export_to_excel(
                     df, start_date, end_date, buf,
+                    property_name=prop_info['name'],
                     include_daily=inc_daily,
                     include_weekly=inc_weekly,
                     include_monthly=inc_monthly,
@@ -1209,7 +1250,8 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
                 )
                 excel_bytes = buf.getvalue()
 
-                filename = f"IE_Story_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
+                clean_name = prop_info['name'].replace(' ', '_')
+                filename = f"{clean_name}_Story_Count_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.xlsx"
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
