@@ -185,6 +185,7 @@ if fetch_btn or ("start" in query_params and "end" in query_params):
                     st.error(f"**{d}**: {status}")
                 else:
                     st.info(f"**{d}**: {status}")
+            st.warning("💡 **Pro-Tip:** If cloud datacenter IP blocks occur, run the local software via `launch_software.bat` or `start_public_live_url.bat` on your PC, which routes through your local ISP connection and is 100% immune to Cloudflare blocks!")
     else:
         df = pd.DataFrame(all_articles)
         total_articles = len(df)

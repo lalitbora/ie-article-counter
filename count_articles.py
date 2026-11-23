@@ -46,27 +46,18 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# Use curl_cffi with Chrome TLS impersonation to bypass Cloudflare on cloud servers (AWS/Streamlit Cloud)
+# Import requests and curl_cffi for resilient multi-tier requests
+import requests
+_SESSION = requests.Session()
+
 try:
     from curl_cffi import requests as cffi_requests
     _USE_CURL_CFFI = True
-    _SESSION = None
 except ImportError:
     _USE_CURL_CFFI = False
-    try:
-        import cloudscraper
-        _SESSION = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'desktop': True
-            }
-        )
-    except ImportError:
-        import requests
-        _SESSION = requests.Session()
+    cffi_requests = None
 
-# Realistic Chrome headers for HTTP requests
+# Realistic Chrome headers for fallback HTTP requests
 HEADERS = {
     'User-Agent': (
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -305,6 +296,70 @@ def get_sitemap_url(property_key: str, target_date: datetime.date) -> str:
         return f"{prop['sitemap_base']}?yyyy={yyyy}&mm={mm}&dd={dd}"
 
 
+def fetch_raw_sitemap(sitemap_url: str, timeout: int = 20):
+    """
+    Fetch sitemap XML using multi-tiered bypass techniques:
+      Tier 1: Googlebot search crawler headers (Cloudflare sitemap WAF explicitly whitelists for sitemaps)
+      Tier 2: curl_cffi with authentic Chrome 124 TLS & HTTP/2 impersonation
+      Tier 3: Bingbot search crawler headers
+      Tier 4: Realistic Windows Chrome browser headers
+    """
+    # Tier 1: Googlebot (whitelisted by Cloudflare WAF specifically for XML sitemaps)
+    try:
+        headers_bot = {
+            'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+            'Accept': 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,*/*;q=0.8',
+            'Accept-Encoding': 'gzip, deflate',
+        }
+        resp = _SESSION.get(sitemap_url, headers=headers_bot, timeout=timeout)
+        if resp.status_code == 200 and resp.content:
+            return resp.status_code, resp.content, None
+        elif resp.status_code == 404:
+            return 404, None, "No sitemap found (404)"
+    except Exception:
+        pass
+
+    # Tier 2: curl_cffi with authentic Chrome 124 TLS & HTTP/2 impersonation
+    if _USE_CURL_CFFI and cffi_requests is not None:
+        try:
+            resp = cffi_requests.get(sitemap_url, impersonate="chrome124", timeout=timeout)
+            if resp.status_code == 200 and resp.content:
+                return resp.status_code, resp.content, None
+            elif resp.status_code == 404:
+                return 404, None, "No sitemap found (404)"
+        except Exception:
+            pass
+
+    # Tier 3: Bingbot search crawler
+    try:
+        headers_bing = {
+            'User-Agent': 'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
+            'Accept': 'text/xml,application/xml,*/*',
+            'Accept-Encoding': 'gzip, deflate',
+        }
+        resp = _SESSION.get(sitemap_url, headers=headers_bing, timeout=timeout)
+        if resp.status_code == 200 and resp.content:
+            return resp.status_code, resp.content, None
+        elif resp.status_code == 404:
+            return 404, None, "No sitemap found (404)"
+    except Exception:
+        pass
+
+    # Tier 4: Realistic Chrome Desktop Session
+    try:
+        resp = _SESSION.get(sitemap_url, headers=HEADERS, timeout=timeout)
+        if resp.status_code == 200 and resp.content:
+            return resp.status_code, resp.content, None
+        elif resp.status_code == 404:
+            return 404, None, "No sitemap found (404)"
+        elif resp.status_code == 403:
+            return 403, None, "HTTP 403 Forbidden (Cloudflare bot block)"
+        else:
+            return resp.status_code, None, f"HTTP {resp.status_code}"
+    except Exception as e:
+        return 0, None, str(e)
+
+
 def fetch_sitemap_for_date(target_date: datetime.date, property_key: str = 'indianexpress', max_retries: int = 3):
     """
     Fetch and parse the daily XML sitemap for a specific date and property.
@@ -317,23 +372,27 @@ def fetch_sitemap_for_date(target_date: datetime.date, property_key: str = 'indi
     week_key, week_label, monday, sunday = compute_week_info(target_date)
 
     for attempt in range(1, max_retries + 1):
+        status_code, content, err = fetch_raw_sitemap(sitemap_url, timeout=20)
+
+        if status_code == 404:
+            error_msg = f"No sitemap found (404) for {target_date}"
+            break
+        elif status_code != 200 or not content:
+            error_msg = err or f"HTTP {status_code}"
+            if attempt < max_retries:
+                import time
+                time.sleep(1.0 * attempt)
+            continue
+
         try:
-            if _USE_CURL_CFFI:
-                resp = cffi_requests.get(sitemap_url, headers=HEADERS, impersonate="chrome124", timeout=20)
-            else:
-                resp = _SESSION.get(sitemap_url, headers=HEADERS, timeout=20)
+            # Check for brotli compressed content
+            if content[:3] != b'<?x':
+                try:
+                    import brotli
+                    content = brotli.decompress(content)
+                except Exception:
+                    pass
 
-            if resp.status_code == 404:
-                error_msg = f"No sitemap found (404) for {target_date}"
-                break
-            elif resp.status_code == 403:
-                error_msg = f"HTTP 403 Forbidden (Cloudflare bot block)"
-                break
-            elif resp.status_code != 200:
-                error_msg = f"HTTP {resp.status_code}"
-                continue
-
-            content = resp.content
             root = ET.fromstring(content)
             urls = root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}url')
 
@@ -373,7 +432,7 @@ def fetch_sitemap_for_date(target_date: datetime.date, property_key: str = 'indi
             break
 
         except Exception as e:
-            error_msg = str(e)
+            error_msg = f"XML Parse Error: {e}"
 
         if attempt < max_retries:
             import time
