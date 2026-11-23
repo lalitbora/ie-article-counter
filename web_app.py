@@ -514,11 +514,11 @@ HTML_PAGE = """<!DOCTYPE html>
 
         <div class="shortcuts">
           <span class="shortcuts-label">Quick Select:</span>
-          <button type="button" class="shortcut-btn" onclick="setDates(0, 0)">Today</button>
-          <button type="button" class="shortcut-btn" onclick="setDates(1, 1)">Yesterday</button>
-          <button type="button" class="shortcut-btn" onclick="setDates(6, 0)">Last 7 Days</button>
-          <button type="button" class="shortcut-btn" onclick="setDates(13, 0)">Last 14 Days</button>
-          <button type="button" class="shortcut-btn" onclick="setMonthToDate()">This Month</button>
+          <button type="button" class="shortcut-btn" onclick="setDates(0, 0); handleCalculate();">Today</button>
+          <button type="button" class="shortcut-btn" onclick="setDates(1, 1); handleCalculate();">Yesterday</button>
+          <button type="button" class="shortcut-btn" onclick="setDates(6, 0); handleCalculate();">Last 7 Days</button>
+          <button type="button" class="shortcut-btn" onclick="setDates(13, 0); handleCalculate();">Last 14 Days</button>
+          <button type="button" class="shortcut-btn" onclick="setMonthToDate(); handleCalculate();">This Month</button>
         </div>
       </form>
 

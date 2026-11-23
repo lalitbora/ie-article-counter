@@ -87,32 +87,43 @@ selected_prop_key = PROPERTY_CHOICES[selected_prop_label]
 prop_info = PROPERTIES[selected_prop_key]
 
 # Initialize session state for date range
-if "start_val" not in st.session_state:
-    st.session_state["start_val"] = today - timedelta(days=6)
-if "end_val" not in st.session_state:
-    st.session_state["end_val"] = today
+if "input_start" not in st.session_state:
+    st.session_state["input_start"] = today - timedelta(days=6)
+if "input_end" not in st.session_state:
+    st.session_state["input_end"] = today
 
-# Handle URL query parameters if present
-query_params = st.query_params
-if "start" in query_params:
-    try:
-        st.session_state["start_val"] = parse_flexible_date(query_params["start"])
-    except Exception:
-        pass
-if "end" in query_params:
-    try:
-        st.session_state["end_val"] = parse_flexible_date(query_params["end"])
-    except Exception:
-        pass
+# Handle URL query parameters once on initial load
+if "url_params_processed" not in st.session_state:
+    st.session_state["url_params_processed"] = True
+    if "start" in query_params:
+        try:
+            st.session_state["input_start"] = parse_flexible_date(query_params["start"])
+        except Exception:
+            pass
+    if "end" in query_params:
+        try:
+            st.session_state["input_end"] = parse_flexible_date(query_params["end"])
+        except Exception:
+            pass
 
 # Quick shortcuts handlers
 def set_quick_dates(start_offset, end_offset):
-    st.session_state["start_val"] = today - timedelta(days=start_offset)
-    st.session_state["end_val"] = today - timedelta(days=end_offset)
+    st.session_state["input_start"] = today - timedelta(days=start_offset)
+    st.session_state["input_end"] = today - timedelta(days=end_offset)
+    st.session_state["auto_trigger"] = True
+    if "start" in st.query_params:
+        del st.query_params["start"]
+    if "end" in st.query_params:
+        del st.query_params["end"]
 
 def set_month_dates():
-    st.session_state["start_val"] = today.replace(day=1)
-    st.session_state["end_val"] = today
+    st.session_state["input_start"] = today.replace(day=1)
+    st.session_state["input_end"] = today
+    st.session_state["auto_trigger"] = True
+    if "start" in st.query_params:
+        del st.query_params["start"]
+    if "end" in st.query_params:
+        del st.query_params["end"]
 
 # Top Checkbox Selectors Panel
 st.markdown("##### ⚙️ Select Story Count Modules to Include:")
@@ -158,16 +169,17 @@ with q5:
 with st.container():
     col1, col2, col3 = st.columns([2, 2, 2])
     with col1:
-        start_date = st.date_input("Start Date", value=st.session_state["start_val"], key="input_start")
+        start_date = st.date_input("Start Date", key="input_start")
     with col2:
-        end_date = st.date_input("End Date", value=st.session_state["end_val"], key="input_end")
+        end_date = st.date_input("End Date", key="input_end")
     with col3:
         st.write("")
         st.write("")
         fetch_btn = st.button("📊 Fetch & Calculate", type="primary", use_container_width=True)
 
 # Main Execution Trigger
-if fetch_btn or ("start" in query_params and "end" in query_params):
+auto_trigger = st.session_state.pop("auto_trigger", False)
+if fetch_btn or auto_trigger or ("start" in query_params and "end" in query_params):
     if start_date > end_date:
         start_date, end_date = end_date, start_date
 
