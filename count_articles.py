@@ -410,6 +410,8 @@ def fetch_sitemap_for_date(target_date: datetime.date, property_key: str = 'indi
                         pub_time = time_part[:8]
 
                     sec, sub_sec, headline = parse_article_url(url_str, property_key=property_key)
+                    prop_name = PROPERTIES.get(property_key, PROPERTIES['indianexpress'])['name']
+                    full_title = f"{headline} | {sec} - {prop_name}" if sub_sec == '-' else f"{headline} | {sub_sec} - {prop_name}"
 
                     articles.append({
                         'date': target_date.strftime('%Y-%m-%d'),
@@ -423,7 +425,7 @@ def fetch_sitemap_for_date(target_date: datetime.date, property_key: str = 'indi
                         'month_name': target_date.strftime('%B %Y'),
                         'section': sec,
                         'sub_section': sub_sec,
-                        'title': headline,
+                        'title': full_title,
                         'headline': headline,
                         'url': url_str
                     })
@@ -927,7 +929,8 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             "Month",
             "Section",
             "Sub-Section",
-            "Article Headline / Title",
+            "Article Title",
+            "Article Headline",
             "Article URL"
         ]
         for col_idx, h in enumerate(headers_data, 1):
@@ -947,13 +950,14 @@ def export_to_excel(df: pd.DataFrame, start_date: datetime.date, end_date: datet
             ws_data.cell(row=r_idx, column=7, value=art['month_name']).alignment = Alignment(horizontal="left")
             ws_data.cell(row=r_idx, column=8, value=art['section']).alignment = Alignment(horizontal="left")
             ws_data.cell(row=r_idx, column=9, value=art['sub_section']).alignment = Alignment(horizontal="left")
-            ws_data.cell(row=r_idx, column=10, value=art['headline']).alignment = Alignment(horizontal="left")
+            ws_data.cell(row=r_idx, column=10, value=art.get('title', '')).alignment = Alignment(horizontal="left")
+            ws_data.cell(row=r_idx, column=11, value=art.get('headline', '')).alignment = Alignment(horizontal="left")
 
-            url_cell = ws_data.cell(row=r_idx, column=11, value=art['url'])
+            url_cell = ws_data.cell(row=r_idx, column=12, value=art['url'])
             url_cell.alignment = Alignment(horizontal="left")
             url_cell.font = Font(name="Calibri", size=10, color="0563C1", underline="single")
 
-            for c_idx in range(1, 11):
+            for c_idx in range(1, 12):
                 ws_data.cell(row=r_idx, column=c_idx).font = regular_font
 
     for ws in wb.worksheets:

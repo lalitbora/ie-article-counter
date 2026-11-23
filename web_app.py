@@ -665,11 +665,12 @@ HTML_PAGE = """<!DOCTYPE html>
                 <tr>
                   <th class="text-center" style="width: 50px;">#</th>
                   <th class="text-center" style="width: 100px;">Date</th>
-                  <th style="width: 100px;">Day</th>
+                  <th style="width: 90px;">Day</th>
                   <th class="text-center" style="width: 90px;">Time (IST)</th>
-                  <th style="width: 130px;">Section</th>
-                  <th style="width: 130px;">Sub-Section</th>
-                  <th>Headline / Title</th>
+                  <th style="width: 110px;">Section</th>
+                  <th style="width: 110px;">Sub-Section</th>
+                  <th>Article Title</th>
+                  <th>Article Headline</th>
                   <th style="width: 90px;">Link</th>
                 </tr>
               </thead>
@@ -936,13 +937,14 @@ HTML_PAGE = """<!DOCTYPE html>
               <td class="text-center">${art.first_publish_time}</td>
               <td><strong>${art.section}</strong></td>
               <td>${art.sub_section}</td>
-              <td>${art.headline}</td>
+              <td>${art.title || art.headline || '-'}</td>
+              <td>${art.headline || '-'}</td>
               <td><a href="${art.url}" target="_blank" style="color: #0563C1; font-weight: 600; text-decoration: underline;">View URL</a></td>
             </tr>
           `;
         });
       } else {
-        dtlHtml = '<tr><td colspan="8" class="text-center">Article metadata was not requested or no articles found.</td></tr>';
+        dtlHtml = '<tr><td colspan="9" class="text-center">Article metadata was not requested or no articles found.</td></tr>';
       }
       tbodyDetails.innerHTML = dtlHtml;
     }
@@ -1171,7 +1173,7 @@ class ArticleCounterHandler(BaseHTTPRequestHandler):
                 # 6. Detailed Articles Metadata
                 all_articles_out = []
                 if inc_details:
-                    all_articles_out = df[['date', 'day_of_week', 'first_publish_time', 'last_modified_time', 'section', 'sub_section', 'headline', 'url']].to_dict('records')
+                    all_articles_out = df[['date', 'day_of_week', 'first_publish_time', 'last_modified_time', 'section', 'sub_section', 'title', 'headline', 'url']].to_dict('records')
 
                 response_payload = {
                     "status": "success",

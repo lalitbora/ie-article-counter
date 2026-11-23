@@ -326,9 +326,23 @@ if fetch_btn or auto_trigger or ("start" in query_params and "end" in query_para
             # All Articles Metadata Tab
             if inc_details:
                 with tabs[tab_idx]:
-                    st.dataframe(
-                        df[['publish_date', 'day_of_week', 'first_publish_time', 'last_modified_time', 'section', 'sub_section', 'headline', 'url']],
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    cols_to_show = [
+                        'publish_date', 'day_of_week', 'first_publish_time', 'last_modified_time',
+                        'section', 'sub_section', 'title', 'headline', 'url'
+                    ]
+                    available_cols = [c for c in cols_to_show if c in df.columns]
+                    meta_df = df[available_cols].copy()
+                    col_names = {
+                        'publish_date': 'Publish Date',
+                        'day_of_week': 'Day of Week',
+                        'first_publish_time': 'First Publish Time (IST)',
+                        'last_modified_time': 'Last Modified (ISO)',
+                        'section': 'Section',
+                        'sub_section': 'Sub-Section',
+                        'title': 'Article Title',
+                        'headline': 'Article Headline',
+                        'url': 'Article URL'
+                    }
+                    meta_df.rename(columns=col_names, inplace=True)
+                    st.dataframe(meta_df, use_container_width=True, hide_index=True)
                 tab_idx += 1
